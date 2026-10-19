@@ -1,0 +1,11 @@
+article .highlight pre,
+article pre.literal-block {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+figure pre.mermaid > svg {
+  width: auto;
+  height: auto;
+  max-width: 100% !important;
+}

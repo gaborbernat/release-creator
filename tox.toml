@@ -1,0 +1,59 @@
+requires = ["tox>=4.64.7", "tox-uv>=1.36.1"]
+env_list = ["3.15", "type", "pkg_meta", "docs", "fix", "dev"]
+skip_missing_interpreters = true
+
+[env_run_base]
+description = "run the tests with pytest under {env_name}"
+default_base_python = ["3.15"]
+package = "wheel"
+wheel_build_env = ".pkg"
+dependency_groups = ["test"]
+pass_env = ["DIFF_AGAINST", "PYTEST_*"]
+commands = [
+  ["pytest", { replace = "posargs", default = [
+    "--cov", "{env_site_packages_dir}{/}release_creator",
+    "--cov", "{tox_root}{/}tests",
+    "--cov-config", "{tox_root}{/}pyproject.toml",
+    "--cov-report", "term-missing:skip-covered",
+    "--cov-report", "xml:{work_dir}{/}coverage.{env_name}.xml",
+    "tests",
+  ], extend = true }],
+  ["diff-cover", "--compare-branch", { replace = "env", name = "DIFF_AGAINST", default = "origin/main" }, "{work_dir}{/}coverage.{env_name}.xml", "--fail-under", "100"],
+]
+
+[env_pkg_base]
+default_base_python = ["3.15"]
+
+[env.type]
+description = "type-check the package"
+dependency_groups = ["type"]
+commands = [
+  ["ty", "check", "--python-platform", "all", "--error", "all", "--output-format", "concise", "."],
+]
+
+[env.pkg_meta]
+description = "check package metadata and contents"
+skip_install = true
+dependency_groups = ["pkg-meta"]
+commands = [
+  ["uv", "build", "--sdist", "--wheel", "--out-dir", "{env_tmp_dir}", "."],
+  ["twine", "check", "{env_tmp_dir}{/}*"],
+  ["check-wheel-contents", "--no-config", "{env_tmp_dir}"],
+]
+
+[env.docs]
+description = "build the documentation"
+dependency_groups = ["docs"]
+commands = [["sphinx-build", "-b", "html", "-W", "-E", "docs", { replace = "posargs", default = ["{env_tmp_dir}{/}html"], extend = true }]]
+
+[env.fix]
+description = "format and lint the source"
+skip_install = true
+dependency_groups = ["fix"]
+commands = [["prek", "run", "--all-files"]]
+
+[env.dev]
+description = "development environment"
+package = "editable"
+dependency_groups = ["dev"]
+commands = [["python", "-c", "import sys; print(sys.executable)"]]
