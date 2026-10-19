@@ -1,0 +1,10 @@
+/.coverage
+/.pytest_cache
+/.ruff_cache
+/.tox
+/.venv
+/dist
+/htmlcov
+*.egg-info/
+__pycache__/
+/uv.lock

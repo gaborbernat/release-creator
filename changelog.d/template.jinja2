@@ -1,0 +1,19 @@
+{% set release = "release-" + versiondata.version | replace(".", "-") %}
+<a name="{{ release }}"></a>
+
+## {{ versiondata.version }} ({{ versiondata.date }})
+
+{% for section, _ in sections.items() %}
+{% for category, _ in definitions.items() if category in sections[section] %}
+{% if sections[section][category] %}
+{% set name = definitions[category]["name"] %}
+<a name="{{ release }}-{{ name | lower | replace(" ", "-") }}"></a>
+
+### {{ name }}
+
+{% for text, _ in sections[section][category].items() %}
+- {{ text }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endfor %}
