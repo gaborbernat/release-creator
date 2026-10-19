@@ -74,12 +74,30 @@ authors there; do not credit bots or reviewers for work they did not author.
 ``notes`` requires exactly one section for ``--tag`` and rejects unknown categories. It renames ``Fixed`` to
 ``Bug fixes`` and ``Added`` to ``Features`` while keeping each release bullet on one line. For Markdown, leave empty
 headings out of the tagged changelog; the supplied Towncrier template does this. The reStructuredText reader omits
-empty categories. The source's category anchors remain stable. See :doc:`the format reference
+empty categories. If the source section already has a ``Full Changelog`` line, ``notes`` replaces it with one link
+built from ``--previous`` and ``--tag``. The source's category anchors remain stable. See :doc:`the format reference
 <../reference/formats>` for every category name.
 
 Omit ``--artifact-url`` if there is no external artifact. Use ``--artifact-label`` to name another ecosystem's
 package link. If ``--previous`` is absent, the final link points to the commits at this tag instead of a comparison.
 Artifact links must use HTTPS.
+
+Shared changelog with separate packages
+=======================================
+
+When packages have separate histories in one Markdown file, name the package section explicitly. For example,
+``toml-fmt`` has ``## pyproject-fmt`` above ``### 2.30.4 (date)`` and ``#### Fixed``. Its Git tag is
+``pyproject-fmt/2.30.4``:
+
+.. code-block:: bash
+
+   uvx --from release-creator release-creator notes \
+     --changelog CHANGELOG.md --package pyproject-fmt \
+     --tag pyproject-fmt/2.30.4 --repository tox-dev/toml-fmt \
+     --previous pyproject-fmt/2.30.3 > release-notes.md
+
+The package selector prevents a matching version in another package's history from entering the output. It does not
+change the repository used for GitHub links.
 
 First-time contributors
 =======================

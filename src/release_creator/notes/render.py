@@ -49,6 +49,57 @@ _RE_GENERATED_PR_AUTHOR: Final = re.compile(
     """,
     re.VERBOSE,
 )
+_RE_RST_VERSION: Final = re.compile(
+    r"""
+    ^(?:
+        v?(?P<tag>\d+\.\d+\.\d+)\ \((?P<date>[^)]+)\)  # Plain version with parenthesized date
+        |
+        `(?P<link_tag>\d+\.\d+\.\d+)\ <https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/
+        (?P=link_tag)>`_\ -\ (?P<link_date>\d{4}-\d{2}-\d{2})  # Linked version with date
+    )$
+    """,
+    re.VERBOSE,
+)
+_RE_RST_HEADING_UNDERLINE: Final = re.compile(
+    r"""
+    (?P<underline>[-*=~^]{3,})  # RST heading adornment
+    """,
+    re.VERBOSE,
+)
+_RE_MARKDOWN_VERSION: Final = re.compile(
+    r"""
+    ^(?P<level>\#{2,3})\          # Markdown version heading level
+    (?P<open>\[)?                   # Optional Keep a Changelog link bracket
+    (?P<tag>v?\d+\.\d+\.\d+)     # Release tag
+    (?(open)\])                     # Close the optional bracket
+    (?:\ \([^)]+\)|\ -\ [^\n]+)? # Parenthesized or dash-separated date
+    $                               # End of heading
+    """,
+    re.VERBOSE,
+)
+_RE_MARKDOWN_VERSION_ANCHOR: Final = re.compile(
+    r"""
+    ^<a\ name="release-             # Version anchor prefix
+    (?P<version>v?\d+(?:-\d+){2})  # Dotted version encoded for an anchor
+    "></a>$                         # Anchor terminator
+    """,
+    re.VERBOSE,
+)
+_RE_MARKDOWN_AUTHOR: Final = re.compile(
+    r"""
+    \[@(?P<handle>[A-Za-z0-9-]+)\]  # GitHub handle in link text
+    \(https://github\.com/(?P=handle)\)  # Matching profile URL
+    """,
+    re.VERBOSE,
+)
+_RE_MARKDOWN_LINK_DEFINITION: Final = re.compile(
+    r"""
+    ^\[(?P<version>v?\d+\.\d+\.\d+|unreleased)\]:  # Version comparison reference
+    \s+https://github\.com/[^\s]+                    # GitHub destination
+    $                                                   # End of definition
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -60,6 +111,7 @@ class ReleaseContext:
     previous: str | None = None
     artifact_url: str | None = None
     artifact_label: str = "PyPI release"
+    package: str | None = None
 
 
 def render_markdown(changelog: str, context: ReleaseContext, generated_notes: str | None = None) -> str:
@@ -71,7 +123,7 @@ def render_markdown(changelog: str, context: ReleaseContext, generated_notes: st
 
     """
     _validate_context(context)
-    notes = mdformat.text(_extract_body(changelog, context.tag), options={"wrap": "no"}, extensions={"gfm"}).strip()
+    notes = mdformat.text(_extract_body(changelog, context), options={"wrap": "no"}, extensions={"gfm"}).strip()
     return _finish(notes, context, generated_notes)
 
 
@@ -88,6 +140,9 @@ def render_rst(
 
     """
     _validate_context(context)
+    if context.package is not None:
+        msg = "package selection requires a Markdown changelog"
+        raise ValueError(msg)
     if issue_role not in {"issue", "pull"}:
         msg = f"invalid issue role: {issue_role}"
         raise ValueError(msg)
@@ -208,30 +263,23 @@ def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
     ]
     if not entries:
         return ""
-    anchor = f"release-{tag.replace('.', '-')}-new-contributors"
+    anchor = f"release-{tag.replace('.', '-').replace('/', '-')}-new-contributors"
     return f'<a name="{anchor}"></a>\n\n### New Contributors\n\n' + "\n".join(entries)
 
 
 def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) -> str:
-    lines = changelog.splitlines()
-    version = re.compile(
-        r"""
-        ^v?                             # Optional release prefix
-        (?P<tag>\d+\.\d+\.\d+)        # Numeric version
-        \ \((?P<date>[^)]+)\)$          # Parenthesized release date
-        """,
-        re.VERBOSE,
-    )
+    lines = [line for line in changelog.splitlines() if not _is_comparison_line(line)]
     headings = [
         index
         for index, line in enumerate(lines)
-        if (match := version.fullmatch(line.strip())) and match["tag"] == context.tag.removeprefix("v")
+        if (match := _RE_RST_VERSION.fullmatch(line.strip()))
+        and (match["tag"] or match["link_tag"]) == context.tag.removeprefix("v")
     ]
     if len(headings) != 1:
         msg = f"expected one changelog section for {context.tag}, found {len(headings)}"
         raise ValueError(msg)
     end = next(
-        (index for index in range(headings[0] + 1, len(lines)) if version.fullmatch(lines[index].strip())),
+        (index for index in range(headings[0] + 1, len(lines)) if _RE_RST_VERSION.fullmatch(lines[index].strip())),
         len(lines),
     )
     sections: dict[str, list[str]] = {}
@@ -239,13 +287,7 @@ def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) 
     index = headings[0] + 1
     while index < end:
         line = lines[index].strip()
-        if index + 1 < end and re.fullmatch(
-            r"""
-            (?P<underline>[-=~^]{3,})   # RST heading underline
-            """,
-            lines[index + 1].strip(),
-            re.VERBOSE,
-        ):
+        if line and index + 1 < end and _RE_RST_HEADING_UNDERLINE.fullmatch(lines[index + 1].strip()):
             category = _require_category(line)
             sections.setdefault(category, [])
             index += 2
@@ -255,7 +297,7 @@ def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) 
                 msg = f"release item outside a category: {line}"
                 raise ValueError(msg)
             sections[category].append(_convert_rst(line, context.repository, issue_role))
-        elif line and line[0] not in "*=~^" and not line.startswith(".. _"):
+        elif line and _RE_RST_HEADING_UNDERLINE.fullmatch(line) is None and not line.startswith(".. _"):
             if category is None or not sections[category]:
                 msg = f"unexpected release text: {line}"
                 raise ValueError(msg)
@@ -340,7 +382,8 @@ def _convert_rst(line: str, repository: str, issue_role: str) -> str:
 def _validate_context(context: ReleaseContext) -> None:
     if not re.fullmatch(
         r"""
-        (?P<tag>[A-Za-z0-9][A-Za-z0-9_.-]*)  # URL-safe release tag
+        (?P<tag>[A-Za-z0-9][A-Za-z0-9_.-]*)     # Release tag or package prefix
+        (?:/(?P<version>[A-Za-z0-9][A-Za-z0-9_.-]*))?  # Optional package version
         """,
         context.tag,
         re.VERBOSE,
@@ -349,13 +392,21 @@ def _validate_context(context: ReleaseContext) -> None:
         raise ValueError(msg)
     if context.previous is not None and not re.fullmatch(
         r"""
-        (?P<tag>[A-Za-z0-9][A-Za-z0-9_.-]*)  # URL-safe previous tag
+        (?P<tag>[A-Za-z0-9][A-Za-z0-9_.-]*)     # Previous tag or package prefix
+        (?:/(?P<version>[A-Za-z0-9][A-Za-z0-9_.-]*))?  # Optional package version
         """,
         context.previous,
         re.VERBOSE,
     ):
         msg = f"invalid previous tag: {context.previous}"
         raise ValueError(msg)
+    if context.package is not None:
+        if not re.fullmatch(r"(?P<package>[A-Za-z0-9][A-Za-z0-9_.-]*)", context.package, re.VERBOSE):
+            msg = f"invalid package: {context.package}"
+            raise ValueError(msg)
+        if "/" in context.tag and not context.tag.startswith(f"{context.package}/"):
+            msg = f"release tag does not match package: {context.tag}"
+            raise ValueError(msg)
     if not re.fullmatch(
         r"""
         (?P<owner>[A-Za-z0-9_.-]+)  # GitHub owner
@@ -372,51 +423,87 @@ def _validate_context(context: ReleaseContext) -> None:
         raise ValueError(msg)
 
 
-def _extract_body(changelog: str, tag: str) -> str:
-    version = re.compile(
-        r"""
-        ^\#\#\                         # Markdown version heading
-        (?P<tag>[^\s(]+)               # Release tag
-        (?:\ \([^)]+\))?                # Optional release date
-        $                               # End of heading
-        """,
-        re.VERBOSE,
-    )
-    lines = changelog.splitlines()
-    headings = [index for index, line in enumerate(lines) if (match := version.fullmatch(line)) and match["tag"] == tag]
+def _extract_body(changelog: str, context: ReleaseContext) -> str:
+    lines = [
+        line
+        for line in changelog.splitlines()
+        if not _is_comparison_line(line) and not _RE_MARKDOWN_LINK_DEFINITION.fullmatch(line)
+    ]
+    heading_level = "###" if context.package is not None else "##"
+    if context.package is not None:
+        packages = [index for index, line in enumerate(lines) if line == f"## {context.package}"]
+        if len(packages) != 1:
+            msg = f"expected one changelog package section for {context.package}, found {len(packages)}"
+            raise ValueError(msg)
+        end = next(
+            (index for index in range(packages[0] + 1, len(lines)) if lines[index].startswith("## ")), len(lines)
+        )
+        lines = lines[packages[0] + 1 : end]
+    version = context.tag.rsplit("/", 1)[-1].removeprefix("v")
+    headings = [
+        index
+        for index, line in enumerate(lines)
+        if (match := _RE_MARKDOWN_VERSION.fullmatch(line))
+        and match["level"] == heading_level
+        and match["tag"].removeprefix("v") == version
+    ]
     if len(headings) != 1:
-        msg = f"expected one changelog section for {tag}, found {len(headings)}"
+        msg = f"expected one changelog section for {context.tag}, found {len(headings)}"
         raise ValueError(msg)
 
     body: list[str] = []
-    version_anchor = re.compile(
-        r"""
-        ^<a\ name="release-             # Version anchor prefix
-        (?P<version>v?\d+(?:-\d+){2})  # Dotted version encoded for an anchor
-        "></a>$                         # Anchor terminator
-        """,
-        re.VERBOSE,
-    )
-    author = re.compile(
-        r"""
-        \[@(?P<handle>[A-Za-z0-9-]+)\]  # GitHub handle in link text
-        \(https://github\.com/(?P=handle)\)  # Matching profile URL
-        """,
-        re.VERBOSE,
-    )
     for source_line in lines[headings[0] + 1 :]:
-        if version.fullmatch(source_line) or version_anchor.fullmatch(source_line):
+        if (
+            (match := _RE_MARKDOWN_VERSION.fullmatch(source_line)) is not None and match["level"] == heading_level
+        ) or _RE_MARKDOWN_VERSION_ANCHOR.fullmatch(source_line):
             break
+        body.append(source_line)
+    return _convert_markdown_body(body, "#### " if context.package is not None else "### ")
+
+
+def _convert_markdown_body(lines: list[str], category_prefix: str) -> str:
+    body: list[str] = []
+    in_category = False
+    in_item = False
+    category_has_item = False
+    for source_line in lines:
         line = source_line
-        if source_line.startswith("### "):
-            category = source_line[4:]
+        if source_line.startswith(category_prefix):
+            if in_category and not category_has_item:
+                msg = "empty changelog category"
+                raise ValueError(msg)
+            category = source_line[len(category_prefix) :]
             if category not in _CATEGORIES:
                 msg = f"unknown changelog category: {category}"
                 raise ValueError(msg)
             line = f"### {_CATEGORIES[category]}"
-        body.append(author.sub(lambda match: f"@{match['handle']}", line))
+            in_category = True
+            in_item = False
+            category_has_item = False
+        elif source_line.startswith("- "):
+            if not in_category:
+                msg = f"release item outside a category: {source_line}"
+                raise ValueError(msg)
+            in_item = True
+            category_has_item = True
+        elif (
+            source_line.strip()
+            and not (source_line.startswith('<a name="release-') and source_line.endswith('"></a>'))
+            and (not in_item or not source_line[0].isspace())
+        ):
+            msg = f"release text outside an item: {source_line}"
+            raise ValueError(msg)
+        body.append(_RE_MARKDOWN_AUTHOR.sub(lambda match: f"@{match['handle']}", line))
+
+    if in_category and not category_has_item:
+        msg = "empty changelog category"
+        raise ValueError(msg)
 
     return "\n".join(body).strip()
+
+
+def _is_comparison_line(line: str) -> bool:
+    return line.strip().startswith(("**Full Changelog**:", "Full Changelog:"))
 
 
 __all__ = [
