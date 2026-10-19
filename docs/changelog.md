@@ -2,6 +2,34 @@
 
 <!-- towncrier release notes start -->
 
+<a name="release-0-3-0"></a>
+
+## 0.3.0 (2026-10-19)
+
+<a name="release-0-3-0-added"></a>
+
+### Added
+
+- Select one package history from a shared Markdown changelog and keep its package-prefixed comparison tags
+  ([#8](https://github.com/tox-dev/release-creator/pull/8)) by [@gaborbernat](https://github.com/gaborbernat).
+- Ship a reStructuredText Towncrier template with stable anchors that follows each changelog's heading style
+  ([#8](https://github.com/tox-dev/release-creator/pull/8)) by [@gaborbernat](https://github.com/gaborbernat).
+
+<a name="release-0-3-0-fixed"></a>
+
+### Fixed
+
+- Keep Towncrier's issue links when a release contains numbered fragments alongside named fragments
+  ([#8](https://github.com/tox-dev/release-creator/pull/8)) by [@gaborbernat](https://github.com/gaborbernat).
+- Read bracketed and v-prefixed Markdown release headings when rendering GitHub Release notes
+  ([#8](https://github.com/tox-dev/release-creator/pull/8)) by [@gaborbernat](https://github.com/gaborbernat).
+- Reject uncategorized release items and empty category headings before tagging or publishing a distribution
+  ([#8](https://github.com/tox-dev/release-creator/pull/8)) by [@gaborbernat](https://github.com/gaborbernat).
+- Replace a changelog's existing comparison line when rendering GitHub Release notes, so the body contains one link
+  ([#8](https://github.com/tox-dev/release-creator/pull/8)) by [@gaborbernat](https://github.com/gaborbernat).
+- Select automatic release versions from reStructuredText fragments as well as Markdown fragments
+  ([#8](https://github.com/tox-dev/release-creator/pull/8)) by [@gaborbernat](https://github.com/gaborbernat).
+
 <a name="release-0-2-0"></a>
 
 ## 0.2.0 (2026-10-19)
