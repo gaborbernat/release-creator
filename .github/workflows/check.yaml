@@ -33,6 +33,10 @@ jobs:
         with:
           python-version: "3.15"
           enable-cache: false
+      - name: Add uv tools to the Windows path
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "$USERPROFILE/.local/bin" >> "$GITHUB_PATH"
       - run: uv tool install --python-preference only-managed --python 3.15 tox --with tox-uv
       - run: uv python install ${{ matrix.py }}
       - run: tox run -vv --notest --skip-missing-interpreters false -e ${{ matrix.py }}

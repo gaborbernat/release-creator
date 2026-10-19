@@ -81,6 +81,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          gh auth setup-git --hostname github.com --force
           previous=$(git tag --list '[0-9]*' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | awk -v tag="$TAG" '$0 == tag { print previous; exit } { previous = $0 }')
           args=()
           if [[ -n "$previous" ]]; then
