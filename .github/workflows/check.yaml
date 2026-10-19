@@ -81,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           if git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- 'changelog.d/*.md' | grep -q .; then
-            uvx towncrier check --compare-with "origin/${GITHUB_BASE_REF}"
+            uv run --no-default-groups --group release towncrier check --compare-with "origin/${GITHUB_BASE_REF}"
           elif [[ "$SKIP_NEWS" != true && "$BOT_AUTHOR" != true ]]; then
             echo '::error::add a changelog fragment or apply the skip news label'
             exit 1

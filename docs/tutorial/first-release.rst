@@ -32,7 +32,7 @@ the project uses squash merges and has an existing ``[tool.towncrier]`` configur
 
    .. code-block:: console
 
-      uvx towncrier build --version 1.2.3 --yes
+      uvx --from towncrier --with release-creator==0.1.0 towncrier build --version 1.2.3 --yes
 
    Check that ``CHANGELOG.md`` has a ``## 1.2.3 (...)`` section and a ``### Fixed`` section. The fragment text and
    linked author remain in the changelog.

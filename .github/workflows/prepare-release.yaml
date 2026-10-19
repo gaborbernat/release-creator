@@ -49,7 +49,7 @@ jobs:
             printf '%s\t%s\n' "${fragment##*/}" "$subject" >> "$RUNNER_TEMP/fragment-commits.tsv"
           done
           uv run --no-default-groups release-creator fragments --repository "$GITHUB_REPOSITORY" --commit-map "$RUNNER_TEMP/fragment-commits.tsv"
-          uvx towncrier build --yes --version "$VERSION"
+          uv run --no-default-groups --group release towncrier build --yes --version "$VERSION"
           uvx prek run --all-files
           git diff HEAD --binary > "$RUNNER_TEMP/release.patch"
           test -s "$RUNNER_TEMP/release.patch"
