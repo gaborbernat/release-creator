@@ -78,11 +78,11 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          previous=$(git tag --list | uvx --from "release-creator==${TAG}" release-creator tags "$TAG" --previous)
+          previous=$(git tag --list | uv run --no-default-groups release-creator tags "$TAG" --previous)
           args=()
           if [[ -n "$previous" ]]; then
             args+=(--previous "$previous")
           fi
           gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$TAG" --jq .body > "$RUNNER_TEMP/generated-notes.md"
-          uvx --from "release-creator==${TAG}" release-creator notes --changelog CHANGELOG.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" "${args[@]}" > "$RUNNER_TEMP/release-notes.md"
+          uv run --no-default-groups release-creator notes --changelog CHANGELOG.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" "${args[@]}" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
