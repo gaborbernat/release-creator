@@ -156,7 +156,9 @@ jobs:
           test "$(grep -c '^\*\*Full Changelog\*\*:' "$RUNNER_TEMP/release-notes.md")" -eq 1
           grep -Fq "[#${PR_NUMBER}](https://github.com/${GITHUB_REPOSITORY}/pull/${PR_NUMBER})" "$RUNNER_TEMP/release-notes.md"
           if [[ "$PR_AUTHOR_TYPE" == Bot ]]; then
-            ! grep -Fq "by @${PR_AUTHOR}" "$RUNNER_TEMP/release-notes.md"
+            if grep -Fq "by @${PR_AUTHOR}" "$RUNNER_TEMP/release-notes.md"; then
+              exit 1
+            fi
           else
             grep -Fq "by @${PR_AUTHOR}" "$RUNNER_TEMP/release-notes.md"
           fi
