@@ -33,7 +33,7 @@ class ReleaseContext:
     artifact_label: str = "PyPI release"
 
 
-def render_markdown(changelog: str, context: ReleaseContext) -> str:
+def render_markdown(changelog: str, context: ReleaseContext, generated_notes: str | None = None) -> str:
     """Render one Markdown release section for GitHub without wrapped list items.
 
     Returns:
@@ -43,10 +43,12 @@ def render_markdown(changelog: str, context: ReleaseContext) -> str:
     """
     _validate_context(context)
     notes = mdformat.text(_extract_body(changelog, context.tag), options={"wrap": "no"}, extensions={"gfm"}).strip()
-    return _finish(notes, context)
+    return _finish(notes, context, generated_notes)
 
 
-def render_rst(changelog: str, context: ReleaseContext, issue_role: str = "issue") -> str:
+def render_rst(
+    changelog: str, context: ReleaseContext, issue_role: str = "issue", generated_notes: str | None = None
+) -> str:
     """Render one reStructuredText release section for GitHub.
 
     Returns:
@@ -63,10 +65,12 @@ def render_rst(changelog: str, context: ReleaseContext, issue_role: str = "issue
     notes = mdformat.text(
         _extract_rst_body(changelog, context, issue_role), options={"wrap": "no"}, extensions={"gfm"}
     ).strip()
-    return _finish(notes, context)
+    return _finish(notes, context, generated_notes)
 
 
-def _finish(notes: str, context: ReleaseContext) -> str:
+def _finish(notes: str, context: ReleaseContext, generated_notes: str | None) -> str:
+    if generated_notes is not None and (contributors := _new_contributors(notes, generated_notes, context.tag)):
+        notes = f"{notes}\n\n{contributors}" if notes else contributors
     if context.artifact_url is not None:
         link = f"[{context.artifact_label}]({context.artifact_url})"
         notes = f"{notes}\n\n{link}" if notes else link
@@ -76,6 +80,27 @@ def _finish(notes: str, context: ReleaseContext) -> str:
     if notes:
         notes += "\n\n"
     return f"{notes}**Full Changelog**: https://github.com/{context.repository}/{comparison}\n"
+
+
+def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
+    if (section := re.search(r"(?ms)^## New Contributors\s*\n(?P<entries>.*?)(?=^## |\Z)", generated_notes)) is None:
+        return ""
+    credited = set(re.findall(r"@([A-Za-z0-9-]+)", notes))
+    entries = [
+        f"- @{match['handle']} made their first contribution in #{match['number']}"
+        for line in section["entries"].splitlines()
+        if (
+            match := re.fullmatch(
+                r"[-*] @(?P<handle>[A-Za-z0-9-]+) made their first contribution in #(?P<number>\d+)",
+                line.strip(),
+            )
+        )
+        and match["handle"] in credited
+    ]
+    if not entries:
+        return ""
+    anchor = f"release-{tag.replace('.', '-')}-new-contributors"
+    return f'<a name="{anchor}"></a>\n\n### New Contributors\n\n' + "\n".join(entries)
 
 
 def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) -> str:

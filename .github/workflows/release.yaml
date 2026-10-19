@@ -86,5 +86,6 @@ jobs:
           if [[ -n "$previous" ]]; then
             args+=(--previous "$previous")
           fi
-          uvx --from "release-creator==${TAG}" release-creator notes --changelog CHANGELOG.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" "${args[@]}" > "$RUNNER_TEMP/release-notes.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$TAG" --jq .body > "$RUNNER_TEMP/generated-notes.md"
+          uvx --from "release-creator==${TAG}" release-creator notes --changelog CHANGELOG.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" "${args[@]}" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

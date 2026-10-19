@@ -56,6 +56,41 @@ def test_render_markdown_first_release_without_artifact() -> None:
     assert result == "**Full Changelog**: https://github.com/tox-dev/example/commits/0.1.0\n"
 
 
+def test_render_markdown_keeps_credited_new_contributors() -> None:
+    changelog = "## 1.2.3 (today)\n\n### Added\n\n- New option by [@alice](https://github.com/alice).\n"
+    generated = dedent("""\
+        <!-- Release notes generated using configuration in .github/release.yml at main -->
+        ## What's Changed
+        * Generated change
+        ## New Contributors
+        * @alice made their first contribution in #42
+        * @dependabot[bot] made their first contribution in #43
+        * @uncredited made their first contribution in #44
+        **Full Changelog**: unrelated
+        """)
+
+    result = render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert result == (
+        "### Features\n\n- New option by @alice.\n\n"
+        '<a name="release-1-2-3-new-contributors"></a>\n\n'
+        "### New Contributors\n\n- @alice made their first contribution in #42\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "generated",
+    [
+        pytest.param("## What's Changed\n* One change\n", id="no-section"),
+        pytest.param("## New Contributors\n* @uncredited made their first contribution in #4\n", id="no-credit"),
+    ],
+)
+def test_render_markdown_omits_unverified_contributors(generated: str) -> None:
+    result = render_markdown("## 1.2.3 (today)\n", ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+    assert result == "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+
+
 def test_render_rst_maps_categories_and_credits() -> None:
     changelog = dedent("""\
         .. _release-1-2-3:

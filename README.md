@@ -36,7 +36,8 @@ uvx --from 'release-creator==0.1.0' release-creator notes \
 
 The changelog is the source of truth. The command does not infer changes from commits or generate an author list. Add
 verified human credits to changelog entries before release; omit bot credits. The GitHub Release may add a
-`New Contributors` section separately when GitHub history establishes one.
+`New Contributors` section by passing `--generated-notes` with the body from GitHub's generate-notes API. Only handles
+credited in the changelog are kept; the generated-notes banner and other generated sections are discarded.
 
 Named Towncrier fragments need no issue or PR number. Before Towncrier builds the changelog, collect each fragment's
 introducing squash commit subject in a tab-separated file, then run

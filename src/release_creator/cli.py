@@ -22,6 +22,7 @@ def main() -> None:
     notes.add_argument("--artifact-url")
     notes.add_argument("--artifact-label", default="PyPI release")
     notes.add_argument("--issue-role", choices=("issue", "pull"), default="issue")
+    notes.add_argument("--generated-notes", type=Path)
     fragments = commands.add_parser("fragments", help="link named fragments to their squash pull requests")
     fragments.add_argument("--directory", type=Path, default=Path("changelog.d"))
     fragments.add_argument("--repository", required=True)
@@ -51,8 +52,11 @@ def _render_notes(args: argparse.Namespace) -> None:
         artifact_label=args.artifact_label,
     )
     changelog = args.changelog.read_text(encoding="utf-8")
+    generated_notes = args.generated_notes.read_text(encoding="utf-8") if args.generated_notes else None
     sys.stdout.write(
-        renderer(changelog, context, args.issue_role) if renderer is render_rst else renderer(changelog, context)
+        renderer(changelog, context, args.issue_role, generated_notes)
+        if renderer is render_rst
+        else renderer(changelog, context, generated_notes)
     )
 
 
