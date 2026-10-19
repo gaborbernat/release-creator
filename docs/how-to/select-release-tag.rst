@@ -19,6 +19,11 @@ An ``*.breaking.md`` fragment requests a major bump. Otherwise, an ``*.feature.m
 other fragments request a patch bump. If several kinds are present, the largest bump wins. From ``1.2.3``, a feature
 produces ``1.3.0`` and a bug fix alone produces ``1.2.4``. With no numeric tags, a feature produces ``0.1.0``.
 
+For tox-dev libraries, both adding and dropping a supported Python version use a ``feature`` fragment, such as
+``+drop-python-3-9.feature.md``. The note appears under Added and automatic version selection makes a minor release.
+New releases will not install on a dropped Python version. Users who need that version can install an older release.
+State the exact Python version in the fragment. Reserve ``*.breaking.md`` for changes that require a major bump.
+
 Choose ``--next major``, ``minor``, or ``patch`` to override that classification. ``--next calver`` uses
 ``year.month.patch``: the first October 2026 release is ``2026.10.0``, and the next is ``2026.10.1``. CalVer uses
 the runner's current date. Every choice requires at least one fragment and must produce a version newer than all

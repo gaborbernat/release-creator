@@ -10,6 +10,10 @@ opening the PR. Use `feature` for additions, `change` for changed behavior, `bug
 documentation. Other types are `breaking`, `security`, `performance`, `deprecation`, `removal`, and `packaging`. Keep
 separate changes in separate fragments.
 
+For Python support changes, use a `feature` fragment for both additions and drops. The note appears under Added and
+selects a minor release. New releases will not install on a dropped Python version. Users who need that version can
+install an older release. State the exact version change. Reserve `breaking` for changes that require a major release.
+
 Write a complete sentence and credit verified human authors:
 
 ```markdown
