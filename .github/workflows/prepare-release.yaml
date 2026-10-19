@@ -74,11 +74,11 @@ jobs:
           git apply --index "$RUNNER_TEMP/release-patch/release.patch"
           while IFS= read -r path; do
             case "$path" in
-              CHANGELOG.md|changelog.d/*.md) ;;
+              docs/changelog.md|changelog.d/*.md) ;;
               *) echo "::error::unexpected release path: $path"; exit 1 ;;
             esac
           done < <(git diff --cached --name-only)
-          grep -Fq "## $VERSION (" CHANGELOG.md
+          grep -Fq "## $VERSION (" docs/changelog.md
           git diff --cached --check
           uvx prek run --all-files
       - id: token

@@ -32,14 +32,14 @@ exist. This minimal ``pyproject.toml`` maps ``bugfix`` fragments to the ``Fixed`
    [tool.towncrier]
    name = "project"
    directory = "changelog.d"
-   filename = "CHANGELOG.md"
+   filename = "docs/changelog.md"
    template = "release_creator.fragments:template.jinja2"
    title_format = false
    type = [
      { directory = "bugfix", name = "Fixed", showcontent = true },
    ]
 
-Create ``CHANGELOG.md`` with the insertion marker:
+Create ``docs/changelog.md`` with the insertion marker:
 
 .. code-block:: markdown
 
@@ -98,7 +98,7 @@ the example output is reproducible; normal release automation can use the curren
    uvx --from towncrier --with release-creator towncrier build \
      --version 0.1.0 --date 2026-10-18 --yes
 
-``CHANGELOG.md`` now contains the release section, including the PR link and linked author credit:
+``docs/changelog.md`` now contains the release section, including the PR link and linked author credit:
 
 .. code-block:: markdown
 
@@ -127,7 +127,7 @@ After pushing the tag and publishing the package, render the notes from that tag
 .. code-block:: bash
 
    uvx --from release-creator release-creator notes \
-     --changelog CHANGELOG.md --tag 0.1.0 \
+     --changelog docs/changelog.md --tag 0.1.0 \
      --repository owner/project \
      --artifact-url https://pypi.org/project/project/0.1.0/ \
      > release-notes.md

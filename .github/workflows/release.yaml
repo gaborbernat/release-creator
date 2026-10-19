@@ -26,8 +26,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           uv run --no-default-groups release-creator tags "$TAG"
-          if ! grep -qF "## $TAG (" CHANGELOG.md; then
-            echo "::error::CHANGELOG.md has no section for $TAG"
+          if ! grep -qF "## $TAG (" docs/changelog.md; then
+            echo "::error::docs/changelog.md has no section for $TAG"
             exit 1
           fi
       - name: Check the tagged source
@@ -84,5 +84,5 @@ jobs:
             args+=(--previous "$previous")
           fi
           gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$TAG" --jq .body > "$RUNNER_TEMP/generated-notes.md"
-          uv run --no-default-groups release-creator notes --changelog CHANGELOG.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" "${args[@]}" > "$RUNNER_TEMP/release-notes.md"
+          uv run --no-default-groups release-creator notes --changelog docs/changelog.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" "${args[@]}" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

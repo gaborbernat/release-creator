@@ -9,7 +9,7 @@ it does not edit the changelog or create the GitHub Release.
 A complete Markdown example
 ===========================
 
-Suppose ``CHANGELOG.md`` contains these two releases:
+Suppose ``docs/changelog.md`` contains these two releases:
 
 .. code-block:: markdown
 
@@ -38,7 +38,7 @@ Render only ``1.2.3``:
 .. code-block:: bash
 
    uvx --from release-creator release-creator notes \
-     --changelog CHANGELOG.md \
+     --changelog docs/changelog.md \
      --tag 1.2.3 \
      --repository owner/project \
      --previous 1.2.2 \
@@ -91,7 +91,7 @@ GitHub's generated notes may identify first-time contributors. Save its body and
    gh api -X POST repos/owner/project/releases/generate-notes \
      -f tag_name=1.2.3 --jq .body > generated-notes.md
    uvx --from release-creator release-creator notes \
-     --changelog CHANGELOG.md --tag 1.2.3 --repository owner/project \
+     --changelog docs/changelog.md --tag 1.2.3 --repository owner/project \
      --generated-notes generated-notes.md > release-notes.md
 
 Only generated ``New Contributors`` lines for handles already credited in the tagged changelog are kept. Generated

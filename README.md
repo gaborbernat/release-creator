@@ -1,5 +1,7 @@
 # release-creator
 
+![release-creator logo](docs/_static/logo-128.png)
+
 [![PyPI](https://img.shields.io/pypi/v/release-creator?style=flat-square)](https://pypi.org/project/release-creator/)
 [![Supported Python versions](https://img.shields.io/pypi/pyversions/release-creator.svg)](https://pypi.org/project/release-creator/)
 [![check](https://github.com/tox-dev/release-creator/actions/workflows/check.yaml/badge.svg)](https://github.com/tox-dev/release-creator/actions/workflows/check.yaml)
@@ -16,7 +18,7 @@ Run the current release from PyPI:
 
 ```bash
 uvx --from 'release-creator' release-creator notes \
-  --changelog CHANGELOG.md \
+  --changelog docs/changelog.md \
   --tag 1.2.3 \
   --repository tox-dev/example \
   --previous 1.2.2 \

@@ -53,6 +53,11 @@ metadata.hooks.fancy-pypi-readme.content-type = "text/markdown"
 metadata.hooks.fancy-pypi-readme.fragments = [ { path = "README.md" } ]
 metadata.hooks.fancy-pypi-readme.substitutions = [
   { pattern = '''(?x)
+    \]\(                                   # Markdown image target
+    (?P<path>docs/_static/logo-128\.png)  # Logo path
+    \)                                     # Target end
+    ''', replacement = '](https://raw.githubusercontent.com/tox-dev/release-creator/main/\g<path>)' },
+  { pattern = '''(?x)
     \]\(                     # Markdown link start
     (?!https?://|\#)          # Leave remote and fragment links unchanged
     (?P<path>[^)]+)           # Repository-relative path
@@ -90,7 +95,7 @@ report.fail_under = 100
 [tool.towncrier]
 name = "release-creator"
 directory = "changelog.d"
-filename = "CHANGELOG.md"
+filename = "docs/changelog.md"
 template = "release_creator.fragments:template.jinja2"
 title_format = false
 type = [

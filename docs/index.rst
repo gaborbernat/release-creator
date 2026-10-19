@@ -2,11 +2,6 @@
 release-creator
 ###############
 
-.. raw:: html
-
-   <img class="brand-wordmark brand-wordmark-light" src="_static/wordmark-light.png" alt="release-creator logo">
-   <img class="brand-wordmark brand-wordmark-dark" src="_static/wordmark-dark.png" alt="release-creator logo">
-
 ``release-creator`` links named changelog fragments to squash pull requests, validates release tags, and renders
 GitHub Release notes from the tagged changelog. Install a published version with
 ``uvx --from release-creator release-creator``.
@@ -33,7 +28,7 @@ Start with the tutorial for a complete release. Use the how-to guides for an exi
 flags and input formats; the explanation covers the source of each part of a GitHub Release.
 
 The :doc:`changelog <changelog>` includes an ``Unreleased`` section in PR builds when that branch has fragments.
-``CHANGELOG.md`` receives those entries when the release is prepared.
+``docs/changelog.md`` receives those entries when the release is prepared.
 
 .. toctree::
    :caption: Tutorial

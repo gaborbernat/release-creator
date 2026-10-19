@@ -29,4 +29,4 @@ tagged `release-creator` source. Set up the App, `release-auth` environment, and
 dispatching it.
 
 PR documentation builds show the branch's fragments in an `Unreleased` section on the changelog page. Towncrier adds
-them to `CHANGELOG.md` only during release preparation.
+them to `docs/changelog.md` only during release preparation.
