@@ -18,6 +18,7 @@ reference for exact flags and formats, and the explanation for the decisions beh
 
    how-to/link-fragments
    how-to/render-notes
+   how-to/select-release-tag
 
 .. toctree::
    :caption: Reference

@@ -7,8 +7,8 @@
 Release preparation tools for Python projects. The `notes` command renders a tagged changelog section for a GitHub
 Release. Other release tasks can use separate commands.
 
-The [documentation](docs/index.rst) has a tutorial, how-to guides, a generated command reference, and an explanation of
-the changelog format.
+The [documentation](https://release-creator.readthedocs.io/) has a tutorial, how-to guides, a generated command
+reference, and an explanation of the changelog format.
 
 ## Render GitHub Release notes
 
@@ -46,10 +46,17 @@ verified human credits to changelog entries before release; omit bot credits. Th
 `New Contributors` section by passing `--generated-notes` with the body from GitHub's generate-notes API. Only handles
 credited in the changelog are kept; the generated-notes banner and other generated sections are discarded.
 
-Named Towncrier fragments need no issue or PR number. Before Towncrier builds the changelog, collect each fragment's
-introducing squash commit subject in a tab-separated file, then run
-`release-creator fragments --repository owner/repo --commit-map commits.tsv`. The command adds PR links and fails if a
-subject does not end in `(#number)`.
+Named Towncrier fragments need no issue or PR number. Before Towncrier builds the changelog, run
+`release-creator fragments --repository owner/repo --git`. The command reads each fragment's introducing squash commit,
+adds its PR link, and fails if the subject does not end in `(#number)`. For a checkout without Git history, pass a
+tab-separated subject map with `--commit-map commits.tsv` instead.
+
+The `tags` command validates numeric release versions and selects the preceding tag for GitHub comparisons:
+
+```bash
+git tag --list | uvx --from 'release-creator==0.1.0' release-creator tags 1.2.3 --require-newer
+git tag --list | uvx --from 'release-creator==0.1.0' release-creator tags 1.2.3 --previous
+```
 
 ## Development and releases
 

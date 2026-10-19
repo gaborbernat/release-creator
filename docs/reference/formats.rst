@@ -5,9 +5,10 @@ Input formats
 Fragments
 =========
 
-The fragment linker accepts filenames such as ``+short-name.feature.md`` and a UTF-8 TSV with one fragment filename
-and one squash commit subject per line. A subject ends with ``(#number)``. The default fragment directory is
-``changelog.d``. The package ships its Towncrier template; projects can set
+The fragment linker accepts filenames such as ``+short-name.feature.md``. With ``--git`` it reads each fragment's
+introducing squash commit. With ``--commit-map`` it reads a UTF-8 TSV with one fragment filename and one subject per
+line. A subject ends with ``(#number)``. The default fragment directory is ``changelog.d``. The package ships its
+Towncrier template; projects can set
 ``template = "release_creator.fragments:template.jinja2"`` in ``[tool.towncrier]`` after installing release-creator.
 Towncrier still requires category definitions in the project's ``pyproject.toml``.
 

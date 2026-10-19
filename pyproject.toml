@@ -5,16 +5,27 @@ requires = [ "hatch-fancy-pypi-readme>=25.1", "hatch-vcs>=0.5", "hatchling>=1.32
 [project]
 name = "release-creator"
 description = "Release preparation tools for changelogs and GitHub"
+keywords = [ "changelog", "GitHub releases", "release automation", "release notes", "towncrier" ]
 license = "MIT"
 authors = [ { name = "Bernát Gábor", email = "gaborjbernat@gmail.com" } ]
 requires-python = ">=3.15"
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.15",
+  "Topic :: Documentation",
+  "Topic :: Software Development :: Build Tools",
+  "Topic :: Software Development :: Version Control :: Git",
+  "Typing :: Typed",
 ]
 dynamic = [ "readme", "version" ]
 dependencies = [ "mdformat>=1,<2", "mdformat-gfm>=1,<2" ]
-urls.Documentation = "https://github.com/tox-dev/release-creator/blob/main/docs/index.rst"
+urls.Documentation = "https://release-creator.readthedocs.io/"
 urls.Source = "https://github.com/tox-dev/release-creator"
 urls.Tracker = "https://github.com/tox-dev/release-creator/issues"
 scripts.release-creator = "release_creator.cli:main"
@@ -34,11 +45,15 @@ version.fallback-version = "0.1.0"
 metadata.hooks.fancy-pypi-readme.content-type = "text/markdown"
 metadata.hooks.fancy-pypi-readme.fragments = [ { path = "README.md" } ]
 metadata.hooks.fancy-pypi-readme.substitutions = [
-  { pattern = '\]\((?!https?://|#)(?P<path>[^)]+)\)', replacement = '](https://github.com/tox-dev/release-creator/blob/main/\g<path>)' },
+  { pattern = '''(?x)
+    \]\(                     # Markdown link start
+    (?!https?://|\#)          # Leave remote and fragment links unchanged
+    (?P<path>[^)]+)           # Repository-relative path
+    \)                       # Markdown link end
+    ''', replacement = '](https://github.com/tox-dev/release-creator/blob/main/\g<path>)' },
 ]
 
 [tool.ruff]
-target-version = "py315"
 line-length = 120
 format.preview = true
 lint.select = [ "ALL" ]
@@ -49,12 +64,17 @@ lint.ignore = [
   "multi-line-summary-second-line",
   "single-line-implicit-string-concatenation",
 ]
-lint.per-file-ignores."tests/**/*.py" = [ "assert", "D", "FBT", "implicit-namespace-package" ]
+lint.per-file-ignores."tests/**/*.py" = [
+  "assert",
+  "D",
+  "FBT",
+  "implicit-namespace-package",
+]
 lint.preview = true
 
 [tool.pytest]
-ini_options.testpaths = [ "tests" ]
-ini_options.addopts = [ "--import-mode=importlib" ]
+addopts = [ "--import-mode=importlib" ]
+testpaths = [ "tests" ]
 
 [tool.coverage]
 run.plugins = [ "covdefaults" ]

@@ -83,16 +83,40 @@ def _finish(notes: str, context: ReleaseContext, generated_notes: str | None) ->
 
 
 def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
-    if (section := re.search(r"(?ms)^## New Contributors\s*\n(?P<entries>.*?)(?=^## |\Z)", generated_notes)) is None:
+    if (
+        section := re.search(
+            r"""
+            ^\#\#\ New\ Contributors\s*\n  # Generated contributor heading
+            (?P<entries>.*?)            # Lines until the next heading
+            (?=^\#\#\ |\Z)              # Next section or end of body
+            """,
+            generated_notes,
+            re.MULTILINE | re.DOTALL | re.VERBOSE,
+        )
+    ) is None:
         return ""
-    credited = set(re.findall(r"@([A-Za-z0-9-]+)", notes))
+    credited = {
+        match["handle"]
+        for match in re.finditer(
+            r"""
+            @(?P<handle>[A-Za-z0-9-]+)  # Credited GitHub handle
+            """,
+            notes,
+            re.VERBOSE,
+        )
+    }
     entries = [
         f"- @{match['handle']} made their first contribution in #{match['number']}"
         for line in section["entries"].splitlines()
         if (
             match := re.fullmatch(
-                r"[-*] @(?P<handle>[A-Za-z0-9-]+) made their first contribution in #(?P<number>\d+)",
+                r"""
+                [-*]\ @(?P<handle>[A-Za-z0-9-]+)  # Generated contributor bullet
+                \ made\ their\ first\ contribution\ in\ \#
+                (?P<number>\d+)                   # First PR number
+                """,
                 line.strip(),
+                re.VERBOSE,
             )
         )
         and match["handle"] in credited
@@ -105,7 +129,14 @@ def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
 
 def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) -> str:
     lines = changelog.splitlines()
-    version = re.compile(r"^v?(?P<tag>\d+\.\d+\.\d+) \([^)]+\)$")
+    version = re.compile(
+        r"""
+        ^v?                             # Optional release prefix
+        (?P<tag>\d+\.\d+\.\d+)        # Numeric version
+        \ \((?P<date>[^)]+)\)$          # Parenthesized release date
+        """,
+        re.VERBOSE,
+    )
     headings = [
         index
         for index, line in enumerate(lines)
@@ -123,7 +154,13 @@ def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) 
     index = headings[0] + 1
     while index < end:
         line = lines[index].strip()
-        if index + 1 < end and re.fullmatch(r"[-=~^]{3,}", lines[index + 1].strip()):
+        if index + 1 < end and re.fullmatch(
+            r"""
+            (?P<underline>[-=~^]{3,})   # RST heading underline
+            """,
+            lines[index + 1].strip(),
+            re.VERBOSE,
+        ):
             category = _require_category(line)
             sections.setdefault(category, [])
             index += 2
@@ -157,32 +194,92 @@ def _require_category(name: str) -> str:
 def _convert_rst(line: str, repository: str, issue_role: str) -> str:
     issue_target = "pull" if issue_role == "pull" else "issues"
     line = re.sub(
-        r":(?:pr|pull):`(?P<number>\d+)`",
+        r"""
+        :(?:pr|pull):`       # Pull request role
+        (?P<number>\d+)       # Pull request number
+        `                     # Role terminator
+        """,
         lambda match: f"[#{match['number']}](https://github.com/{repository}/pull/{match['number']})",
         line,
+        flags=re.VERBOSE,
     )
     line = re.sub(
-        r":issue:`(?P<number>\d+)`",
+        r"""
+        :issue:`              # Issue role
+        (?P<number>\d+)       # Issue number
+        `                     # Role terminator
+        """,
         lambda match: f"[#{match['number']}](https://github.com/{repository}/{issue_target}/{match['number']})",
         line,
+        flags=re.VERBOSE,
     )
-    line = re.sub(r":user:`(?P<handle>[A-Za-z0-9-]+)`", lambda match: f"@{match['handle']}", line)
     line = re.sub(
-        r"`@(?P<handle>[A-Za-z0-9-]+) <https://github\.com/(?P=handle)>`_", lambda match: f"@{match['handle']}", line
+        r"""
+        :user:`               # GitHub user role
+        (?P<handle>[A-Za-z0-9-]+)  # GitHub handle
+        `                     # Role terminator
+        """,
+        lambda match: f"@{match['handle']}",
+        line,
+        flags=re.VERBOSE,
     )
-    line = re.sub(r"``([^`]+)``", r"`\1`", line)
-    line = re.sub(r":(?:[a-z]+:)?[a-z]+:`~?([^`]+)`", lambda match: f"`{match[1].split('.')[-1]}`", line)
+    line = re.sub(
+        r"""
+        `@(?P<handle>[A-Za-z0-9-]+)  # Link text and GitHub handle
+        \ <https://github\.com/(?P=handle)>`_  # Matching profile URL
+        """,
+        lambda match: f"@{match['handle']}",
+        line,
+        flags=re.VERBOSE,
+    )
+    line = re.sub(
+        r"""
+        ``(?P<code>[^`]+)``   # RST inline code
+        """,
+        r"`\g<code>`",
+        line,
+        flags=re.VERBOSE,
+    )
+    line = re.sub(
+        r"""
+        :(?:[a-z]+:)?[a-z]+:`  # RST role with optional domain
+        ~?(?P<name>[^`]+)`     # Referenced name, with optional short display
+        """,
+        lambda match: f"`{match['name'].split('.')[-1]}`",
+        line,
+        flags=re.VERBOSE,
+    )
     return line.replace(" - by ", " by ")
 
 
 def _validate_context(context: ReleaseContext) -> None:
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", context.tag):
+    if not re.fullmatch(
+        r"""
+        (?P<tag>[A-Za-z0-9][A-Za-z0-9_.-]*)  # URL-safe release tag
+        """,
+        context.tag,
+        re.VERBOSE,
+    ):
         msg = f"invalid release tag: {context.tag}"
         raise ValueError(msg)
-    if context.previous is not None and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", context.previous):
+    if context.previous is not None and not re.fullmatch(
+        r"""
+        (?P<tag>[A-Za-z0-9][A-Za-z0-9_.-]*)  # URL-safe previous tag
+        """,
+        context.previous,
+        re.VERBOSE,
+    ):
         msg = f"invalid previous tag: {context.previous}"
         raise ValueError(msg)
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", context.repository):
+    if not re.fullmatch(
+        r"""
+        (?P<owner>[A-Za-z0-9_.-]+)  # GitHub owner
+        /                            # Repository separator
+        (?P<name>[A-Za-z0-9_.-]+)   # GitHub repository
+        """,
+        context.repository,
+        re.VERBOSE,
+    ):
         msg = f"invalid repository: {context.repository}"
         raise ValueError(msg)
     if context.artifact_url is not None and not context.artifact_url.startswith("https://"):
@@ -191,7 +288,15 @@ def _validate_context(context: ReleaseContext) -> None:
 
 
 def _extract_body(changelog: str, tag: str) -> str:
-    version = re.compile(r"^## (?P<tag>[^\s(]+)(?: \([^)]*\))?$")
+    version = re.compile(
+        r"""
+        ^\#\#\                         # Markdown version heading
+        (?P<tag>[^\s(]+)               # Release tag
+        (?:\ \([^)]+\))?                # Optional release date
+        $                               # End of heading
+        """,
+        re.VERBOSE,
+    )
     lines = changelog.splitlines()
     headings = [index for index, line in enumerate(lines) if (match := version.fullmatch(line)) and match["tag"] == tag]
     if len(headings) != 1:
@@ -199,8 +304,21 @@ def _extract_body(changelog: str, tag: str) -> str:
         raise ValueError(msg)
 
     body: list[str] = []
-    version_anchor = re.compile(r'^<a name="release-v?\d+(?:-\d+){2}"></a>$')
-    author = re.compile(r"\[@(?P<handle>[A-Za-z0-9-]+)\]\(https://github\.com/(?P=handle)\)")
+    version_anchor = re.compile(
+        r"""
+        ^<a\ name="release-             # Version anchor prefix
+        (?P<version>v?\d+(?:-\d+){2})  # Dotted version encoded for an anchor
+        "></a>$                         # Anchor terminator
+        """,
+        re.VERBOSE,
+    )
+    author = re.compile(
+        r"""
+        \[@(?P<handle>[A-Za-z0-9-]+)\]  # GitHub handle in link text
+        \(https://github\.com/(?P=handle)\)  # Matching profile URL
+        """,
+        re.VERBOSE,
+    )
     for source_line in lines[headings[0] + 1 :]:
         if version.fullmatch(source_line) or version_anchor.fullmatch(source_line):
             break

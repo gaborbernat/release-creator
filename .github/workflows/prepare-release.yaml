@@ -29,26 +29,12 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::expected a major.minor.patch version"
-            exit 1
-          fi
-          latest=$(git tag --list '[0-9]*' | sort -V | tail -n 1)
-          if [[ "$(printf '%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" || "$latest" == "$VERSION" ]]; then
-            echo "::error::$VERSION must be newer than $latest"
-            exit 1
-          fi
+          git tag --list | uv run --no-default-groups release-creator tags "$VERSION" --require-newer
           if ! compgen -G 'changelog.d/*.md' > /dev/null; then
             echo "::error::no changelog fragments to release"
             exit 1
           fi
-          : > "$RUNNER_TEMP/fragment-commits.tsv"
-          for fragment in changelog.d/+*.*; do
-            [[ -e "$fragment" ]] || continue
-            subject=$(git log -1 --format=%s --diff-filter=A HEAD -- "$fragment")
-            printf '%s\t%s\n' "${fragment##*/}" "$subject" >> "$RUNNER_TEMP/fragment-commits.tsv"
-          done
-          uv run --no-default-groups release-creator fragments --repository "$GITHUB_REPOSITORY" --commit-map "$RUNNER_TEMP/fragment-commits.tsv"
+          uv run --no-default-groups release-creator fragments --repository "$GITHUB_REPOSITORY" --git
           uv run --no-default-groups --group release towncrier build --yes --version "$VERSION"
           uvx prek run --all-files
           git diff HEAD --binary > "$RUNNER_TEMP/release.patch"
