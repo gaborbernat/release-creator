@@ -20,14 +20,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        py: ["3.15", "3.14", "3.13", "3.12", "3.11"]
+        py: ["3.15"]
         os:
-          - {image: ubuntu-24.04, name: ubuntu}
+          - {image: ubuntu-26.04, name: ubuntu}
           - {image: windows-2025, name: windows}
-          - {image: macos-15, name: macos}
+          - {image: macos-26, name: macos}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
@@ -45,11 +46,11 @@ jobs:
           DIFF_AGAINST: ${{ github.event.pull_request.base.sha || 'HEAD' }}
   check:
     name: tox env ${{ matrix.tox_env }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
-        tox_env: ["type", "type-min", "pkg_meta", "dev"]
+        tox_env: ["type", "pkg_meta", "dev"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,13 +60,11 @@ jobs:
           python-version: "3.15"
           enable-cache: false
       - run: uv tool install --python-preference only-managed --python 3.15 tox --with tox-uv
-      - if: matrix.tox_env == 'type-min'
-        run: uv python install 3.11
       - run: tox run -vv --notest --skip-missing-interpreters false -e ${{ matrix.tox_env }}
       - run: tox run --skip-pkg-install -e ${{ matrix.tox_env }}
   changelog:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,7 +90,7 @@ jobs:
     name: Required checks pass
     if: always()
     needs: [test, check, changelog]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - env:
           NEEDS_JSON: ${{ toJSON(needs) }}

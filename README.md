@@ -1,14 +1,14 @@
 # release-creator
 
-Release preparation tools shared by tox-dev projects. The first command renders a tagged changelog section for a GitHub
-Release. Later commands can cover other release tasks without changing the `notes` interface.
+Release preparation tools for Python projects. The `notes` command renders a tagged changelog section for a GitHub
+Release. Other release tasks can use separate commands.
 
 ## Render GitHub Release notes
 
-Use a pinned Git commit until the package is on PyPI:
+Install a pinned release from PyPI:
 
 ```bash
-uvx --from 'git+https://github.com/tox-dev/release-creator@<commit>' release-creator notes \
+uvx --from 'release-creator==0.1.0' release-creator notes \
   --changelog CHANGELOG.md \
   --tag 1.2.3 \
   --repository tox-dev/example \
@@ -21,9 +21,27 @@ handles to GitHub mentions, and leaves bullets unwrapped. It keeps stable catego
 they are absent from the source, and adds artifact and comparison links. Use `--artifact-label` for an ecosystem other
 than PyPI; omit `--artifact-url` when there is no external artifact.
 
+The command also accepts a `.rst` changelog with the same category names. For projects whose `:issue:` role points at
+PRs, pass `--issue-role pull`:
+
+```bash
+uvx --from 'release-creator==0.1.0' release-creator notes \
+  --changelog docs/changelog.rst \
+  --tag 1.2.3 \
+  --repository tox-dev/example \
+  --previous 1.2.2 \
+  --issue-role pull \
+  --artifact-url https://pypi.org/project/example/1.2.3/ > release-notes.md
+```
+
 The changelog is the source of truth. The command does not infer changes from commits or generate an author list. Add
 verified human credits to changelog entries before release; omit bot credits. The GitHub Release may add a
 `New Contributors` section separately when GitHub history establishes one.
+
+Named Towncrier fragments need no issue or PR number. Before Towncrier builds the changelog, collect each fragment's
+introducing squash commit subject in a tab-separated file, then run
+`release-creator fragments --repository owner/repo --commit-map commits.tsv`. The command adds PR links and fails if a
+subject does not end in `(#number)`.
 
 ## Development and releases
 

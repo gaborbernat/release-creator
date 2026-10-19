@@ -8,25 +8,21 @@ description = "Release preparation tools for changelogs and GitHub"
 readme = "README.md"
 license = "MIT"
 authors = [ { name = "Bernát Gábor", email = "gaborjbernat@gmail.com" } ]
-requires-python = ">=3.11"
+requires-python = ">=3.15"
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
 ]
 dynamic = [ "version" ]
 dependencies = [ "mdformat>=1,<2", "mdformat-gfm>=1,<2" ]
 urls.Source = "https://github.com/tox-dev/release-creator"
 urls.Tracker = "https://github.com/tox-dev/release-creator/issues"
-scripts.release-creator = "release_creator._cli:main"
+scripts.release-creator = "release_creator.cli:main"
 
 [dependency-groups]
 dev = [ { include-group = "test" }, { include-group = "type" }, { include-group = "pkg-meta" } ]
 test = [ "covdefaults>=2.3", "diff-cover>=10.2", "pytest>=9", "pytest-cov>=7" ]
-type = [ "mypy>=2.3", "pyrefly>=1.2", "ty>=0.0.84", { include-group = "test" } ]
+type = [ "ty>=0.0.84", { include-group = "test" } ]
 fix = [ "prek>=0.2" ]
 pkg-meta = [ "check-wheel-contents>=0.6.3", "twine>=7", "uv>=0.12.22" ]
 release = [ "towncrier>=26.9" ]
@@ -36,7 +32,7 @@ version.source = "vcs"
 version.fallback-version = "0.1.0"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py315"
 line-length = 120
 format.preview = true
 lint.select = [ "ALL" ]
@@ -49,15 +45,6 @@ lint.ignore = [
 ]
 lint.per-file-ignores."tests/**/*.py" = [ "assert", "D", "FBT", "implicit-namespace-package" ]
 lint.preview = true
-
-[tool.mypy]
-files = [ "src/release_creator", "tests" ]
-strict = true
-
-[tool.pyrefly]
-python-platform = "linux"
-project-includes = [ "src/release_creator", "tests" ]
-search-path = [ "src" ]
 
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]

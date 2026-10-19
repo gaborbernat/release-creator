@@ -8,7 +8,7 @@ env:
   dists-artifact-name: python-package-distributions
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,7 +45,7 @@ jobs:
   release:
     needs:
       - build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     environment:
       name: release
       url: https://pypi.org/project/release-creator/${{ github.ref_name }}
@@ -63,7 +63,7 @@ jobs:
           attestations: true
   github-release:
     needs: release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
@@ -81,11 +81,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          gh auth setup-git --hostname github.com --force
           previous=$(git tag --list '[0-9]*' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | awk -v tag="$TAG" '$0 == tag { print previous; exit } { previous = $0 }')
           args=()
           if [[ -n "$previous" ]]; then
             args+=(--previous "$previous")
           fi
-          uvx --from "git+https://github.com/tox-dev/release-creator@${TAG}" release-creator notes --changelog CHANGELOG.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" "${args[@]}" > "$RUNNER_TEMP/release-notes.md"
+          uvx --from "release-creator==${TAG}" release-creator notes --changelog CHANGELOG.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" "${args[@]}" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
