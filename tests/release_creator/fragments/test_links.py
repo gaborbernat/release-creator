@@ -113,6 +113,15 @@ def test_add_pull_request_links_preserves_shared_credits(tmp_path: Path) -> None
     )
 
 
+def test_add_pull_request_links_leaves_numbered_fragment(tmp_path: Path) -> None:
+    fragment = tmp_path / "42.feature.md"
+    fragment.write_text("Add a feature by [@alice](https://github.com/alice).\n")
+
+    add_pull_request_links(tmp_path, "tox-dev/example", {})
+
+    assert fragment.read_text() == "Add a feature by [@alice](https://github.com/alice).\n"
+
+
 def test_add_pull_request_links_rejects_a_mismatched_author_without_partial_writes(tmp_path: Path) -> None:
     first = tmp_path / "+first.feature.md"
     first.write_text("Add a feature.\n")

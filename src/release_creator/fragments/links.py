@@ -6,6 +6,7 @@ import re
 from typing import Final
 lazy from pathlib import Path
 
+from release_creator.fragments.names import pending_fragments
 from release_creator.fragments.pull_requests import PullRequestAuthor, pull_request_number, validate_repository
 
 _RE_PULL_REQUEST_LINK: Final = re.compile(
@@ -52,7 +53,8 @@ def add_pull_request_links(
     validate_repository(repository)
     updates: list[tuple[Path, str]] = [
         (fragment, _link_fragment(fragment, repository, commit_subjects, authors))
-        for fragment in sorted(directory.glob("+*.*"))
+        for fragment in pending_fragments(directory)
+        if fragment.name.startswith("+")
     ]
     for fragment, content in updates:
         fragment.write_text(content, encoding="utf-8")

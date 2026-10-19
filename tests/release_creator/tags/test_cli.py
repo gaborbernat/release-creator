@@ -30,6 +30,39 @@ def test_tags_next(
     assert capsys.readouterr().out == "0.2.0\n"
 
 
+def test_tags_next_accepts_numbered_fragment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "42.feature.md").write_text("Add a feature.\n")
+    monkeypatch.setattr(sys, "argv", ["release-creator", "tags", "--next", "auto", "--directory", str(tmp_path)])
+    monkeypatch.setattr(sys, "stdin", StringIO("0.1.0\n"))
+
+    main()
+
+    assert capsys.readouterr().out == "0.2.0\n"
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        pytest.param("topic.feature.md", id="missing-plus"),
+        pytest.param("+.feature.md", id="empty-name"),
+        pytest.param("\N{ARABIC-INDIC DIGIT ONE}.feature.md", id="non-ascii-number"),
+    ],
+)
+def test_tags_next_rejects_unsupported_fragment_name(
+    filename: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / filename).write_text("Add a feature.\n")
+    monkeypatch.setattr(sys, "argv", ["release-creator", "tags", "--next", "auto", "--directory", str(tmp_path)])
+    monkeypatch.setattr(sys, "stdin", StringIO("0.1.0\n"))
+
+    with pytest.raises(SystemExit, match="2"):
+        main()
+
+    assert filename in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [

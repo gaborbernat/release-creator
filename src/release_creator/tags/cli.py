@@ -5,6 +5,7 @@ lazy import argparse
 lazy from datetime import UTC, datetime
 lazy from pathlib import Path
 
+lazy from release_creator.fragments.names import pending_fragments
 lazy from release_creator.tags.select import next_tag, parse_tag, previous_tag, require_newer_tag
 
 
@@ -34,7 +35,7 @@ def _select(args: argparse.Namespace) -> None:
         version = next_tag(
             args.next,
             sys.stdin.read().splitlines(),
-            [path.name for extension in ("md", "rst") for path in args.directory.glob(f"*.*.{extension}")],
+            [path.name for path in pending_fragments(args.directory)],
             datetime.now(UTC).date(),
         )
         sys.stdout.write(f"{version}\n")

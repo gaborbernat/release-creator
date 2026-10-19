@@ -5,6 +5,7 @@ lazy import argparse
 
 lazy from release_creator.fragments.git import commit_subjects_from_git
 lazy from release_creator.fragments.links import add_pull_request_links
+lazy from release_creator.fragments.names import pending_fragments
 lazy from release_creator.fragments.pull_requests import pull_request_authors, validate_repository
 
 
@@ -26,6 +27,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
 
 def _link(args: argparse.Namespace) -> None:
     validate_repository(args.repository)
+    pending_fragments(args.directory)
     commit_subjects = (
         dict(line.split("\t", 1) for line in args.commit_map.read_text(encoding="utf-8").splitlines())
         if args.commit_map is not None

@@ -4,6 +4,8 @@ import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Fragment provenance comes from the local Git checkout.
 lazy from pathlib import Path
 
+lazy from release_creator.fragments.names import pending_fragments
+
 
 def commit_subjects_from_git(directory: Path) -> dict[str, str]:
     """Read the commit subject that first added each named fragment.
@@ -20,7 +22,9 @@ def commit_subjects_from_git(directory: Path) -> dict[str, str]:
         msg = "Git is required to read fragment history"
         raise FileNotFoundError(msg)
     subjects: dict[str, str] = {}
-    for fragment in sorted(directory.glob("+*.*")):
+    for fragment in pending_fragments(directory):
+        if not fragment.name.startswith("+"):
+            continue
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed Git command; the fragment path is a separate argument.
             [git, "log", "-1", "--format=%s", "--diff-filter=A", "HEAD", "--", str(fragment)],
             capture_output=True,

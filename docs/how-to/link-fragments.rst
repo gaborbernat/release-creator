@@ -49,6 +49,9 @@ subject to end in ``(#number)`` and rejects a fragment that already links that p
 is enabled, a failed GitHub lookup or a credit that omits the PR author stops the command before Towncrier builds the
 changelog. The linker validates every fragment before writing any of them.
 
+Both ``fragments`` and ``tags --next`` reject a named fragment without its ``+`` prefix. Otherwise Towncrier would
+publish the filename stem in place of a pull request link. The pull request check applies the same rule before merge.
+
 Numbered fragments also work. Towncrier gets their issue link from ``issue_format`` in ``pyproject.toml``; set that
 format to the repository's issue or pull request URL. The linker does not infer an author from a numbered filename, so
 write any needed ``by`` credit in the fragment itself. Use a named fragment when the pull request number is not known.

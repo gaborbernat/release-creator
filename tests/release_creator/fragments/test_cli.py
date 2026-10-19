@@ -35,6 +35,27 @@ def test_fragments_cli_links_squash_pull_request(tmp_path: Path, monkeypatch: py
     assert fragment.read_text() == "Add a feature ([#3](https://github.com/tox-dev/example/pull/3)).\n"
 
 
+def test_fragments_cli_rejects_unsupported_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    directory = tmp_path / "changelog.d"
+    directory.mkdir()
+    fragment = directory / "topic.feature.md"
+    fragment.write_text("Add a feature.\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["release-creator", "fragments", "--repository", "tox-dev/example", "--commit-map", "missing.tsv"],
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        main()
+
+    assert "unsupported changelog fragment name" in capsys.readouterr().err
+    assert fragment.read_text() == "Add a feature.\n"
+
+
 def test_fragments_cli_resolves_authors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     directory = tmp_path / "changelog.d"
     directory.mkdir()
@@ -96,6 +117,8 @@ def test_fragments_cli_reads_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     directory.mkdir()
     fragment = directory / "+topic.feature.md"
     fragment.write_text("Add a feature.\n")
+    numbered = directory / "3.doc.md"
+    numbered.write_text("Document a feature by a contributor.\n")
     git = shutil.which("git")
     assert git is not None
     subprocess.run([git, "init", "-q", str(tmp_path)], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed Git setup in a temp repo.
@@ -121,6 +144,7 @@ def test_fragments_cli_reads_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     main()
 
     assert fragment.read_text() == "Add a feature ([#3](https://github.com/tox-dev/example/pull/3)).\n"
+    assert numbered.read_text() == "Document a feature by a contributor.\n"
 
 
 def test_fragments_cli_reports_git_error(
