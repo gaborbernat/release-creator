@@ -3,10 +3,10 @@ Link named fragments after merge
 ################################
 
 Use named fragments when contributors should be able to write release notes before a pull request number exists. The
-``fragments`` reads each file's introducing squash commit from Git. Each subject must end in ``(#number)``. The command
+``fragments`` command reads each file's introducing squash commit from Git. Each subject must end in ``(#number)``. It
 inserts the corresponding GitHub pull request link in the fragment text.
 
-.. code-block:: console
+.. code-block:: bash
 
    uvx --from release-creator==0.1.0 release-creator fragments --directory changelog.d --repository owner/project --git
 
