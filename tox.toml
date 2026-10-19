@@ -44,7 +44,7 @@ commands = [
 [env.docs]
 description = "build the documentation"
 dependency_groups = ["docs"]
-commands = [["sphinx-build", "-b", "html", "-W", "-E", "docs", "{env_tmp_dir}{/}html"]]
+commands = [["sphinx-build", "-b", "html", "-W", "-E", "docs", { replace = "posargs", default = ["{env_tmp_dir}{/}html"], extend = true }]]
 
 [env.fix]
 description = "format and lint the source"
