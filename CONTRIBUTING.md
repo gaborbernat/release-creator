@@ -25,5 +25,8 @@ work. This label may be added after opening the PR, and it does not suppress che
 The `Prepare release` workflow reads the PR number from each fragment's squash commit, assembles a Towncrier changelog
 patch, runs `prek`, then uses the repository-scoped release App to commit and tag on `main`. The tag workflow runs
 `prek` again, builds the package, publishes to PyPI through trusted publishing, and creates a GitHub Release using the
-newly published `release-creator` package. Set up the App, `release-auth` environment, and PyPI trusted publisher before
+tagged `release-creator` source. Set up the App, `release-auth` environment, and PyPI trusted publisher before
 dispatching it.
+
+PR documentation builds show the branch's fragments in an `Unreleased` section on the changelog page. Towncrier adds
+them to `CHANGELOG.md` only during release preparation.

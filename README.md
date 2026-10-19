@@ -12,10 +12,10 @@ reference, and an explanation of the changelog format.
 
 ## Render GitHub Release notes
 
-Install a pinned release from PyPI:
+Run the current release from PyPI:
 
 ```bash
-uvx --from 'release-creator==0.1.0' release-creator notes \
+uvx --from 'release-creator' release-creator notes \
   --changelog CHANGELOG.md \
   --tag 1.2.3 \
   --repository tox-dev/example \
@@ -23,16 +23,17 @@ uvx --from 'release-creator==0.1.0' release-creator notes \
   --artifact-url https://pypi.org/project/example/1.2.3/ > release-notes.md
 ```
 
-The command reads the tagged section, maps `Added` to `Features` and `Fixed` to `Bug fixes`, changes linked author
-handles to GitHub mentions, and leaves bullets unwrapped. It keeps stable category anchors, omits empty categories when
-they are absent from the source, and adds artifact and comparison links. Use `--artifact-label` for an ecosystem other
-than PyPI; omit `--artifact-url` when there is no external artifact.
+For automation, replace `release-creator` after `--from` with a tested `release-creator==VERSION`. The command reads the
+tagged section, maps `Added` to `Features` and `Fixed` to `Bug fixes`, changes linked author handles to GitHub mentions,
+and leaves bullets unwrapped. It keeps stable category anchors, omits empty categories when they are absent from the
+source, and adds artifact and comparison links. Use `--artifact-label` for an ecosystem other than PyPI; omit
+`--artifact-url` when there is no external artifact.
 
 The command also accepts a `.rst` changelog with the same category names. For projects whose `:issue:` role points at
 PRs, pass `--issue-role pull`:
 
 ```bash
-uvx --from 'release-creator==0.1.0' release-creator notes \
+uvx --from 'release-creator' release-creator notes \
   --changelog docs/changelog.rst \
   --tag 1.2.3 \
   --repository tox-dev/example \
@@ -54,8 +55,8 @@ tab-separated subject map with `--commit-map commits.tsv` instead.
 The `tags` command validates numeric release versions and selects the preceding tag for GitHub comparisons:
 
 ```bash
-git tag --list | uvx --from 'release-creator==0.1.0' release-creator tags 1.2.3 --require-newer
-git tag --list | uvx --from 'release-creator==0.1.0' release-creator tags 1.2.3 --previous
+git tag --list | uvx --from 'release-creator' release-creator tags 1.2.3 --require-newer
+git tag --list | uvx --from 'release-creator' release-creator tags 1.2.3 --previous
 ```
 
 ## Development and releases

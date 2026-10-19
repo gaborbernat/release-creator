@@ -9,3 +9,37 @@ figure pre.mermaid > svg {
   height: auto;
   max-width: 100% !important;
 }
+
+.brand-wordmark {
+  width: min(100%, 420px);
+  height: auto;
+  margin: 0 0 1rem;
+}
+
+#furo-main-content > section#release-creator > h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.brand-wordmark-dark,
+body[data-theme="dark"] .brand-wordmark-light {
+  display: none;
+}
+
+body[data-theme="dark"] .brand-wordmark-dark {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme="light"]) .brand-wordmark-light {
+    display: none;
+  }
+
+  body:not([data-theme="light"]) .brand-wordmark-dark {
+    display: block;
+  }
+}
