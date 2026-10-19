@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from release_creator.notes.fragments import add_pull_request_links
+from release_creator.fragments.links import add_pull_request_links
 
 if TYPE_CHECKING:
     from pathlib import Path

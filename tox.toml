@@ -1,5 +1,5 @@
 requires = ["tox>=4.64.7", "tox-uv>=1.36.1"]
-env_list = ["3.15", "type", "pkg_meta", "fix", "dev"]
+env_list = ["3.15", "type", "pkg_meta", "docs", "fix", "dev"]
 skip_missing_interpreters = true
 
 [env_run_base]
@@ -40,6 +40,11 @@ commands = [
   ["twine", "check", "{env_tmp_dir}{/}*"],
   ["check-wheel-contents", "--no-config", "{env_tmp_dir}"],
 ]
+
+[env.docs]
+description = "build the documentation"
+dependency_groups = ["docs"]
+commands = [["sphinx-build", "-b", "html", "-W", "-E", "docs", "{env_tmp_dir}{/}html"]]
 
 [env.fix]
 description = "format and lint the source"

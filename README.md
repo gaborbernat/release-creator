@@ -1,7 +1,14 @@
 # release-creator
 
+[![PyPI](https://img.shields.io/pypi/v/release-creator?style=flat-square)](https://pypi.org/project/release-creator/)
+[![Supported Python versions](https://img.shields.io/pypi/pyversions/release-creator.svg)](https://pypi.org/project/release-creator/)
+[![check](https://github.com/tox-dev/release-creator/actions/workflows/check.yaml/badge.svg)](https://github.com/tox-dev/release-creator/actions/workflows/check.yaml)
+
 Release preparation tools for Python projects. The `notes` command renders a tagged changelog section for a GitHub
 Release. Other release tasks can use separate commands.
+
+The [documentation](docs/index.rst) has a tutorial, how-to guides, a generated command reference, and an explanation of
+the changelog format.
 
 ## Render GitHub Release notes
 
@@ -47,4 +54,4 @@ subject does not end in `(#number)`.
 ## Development and releases
 
 See [contributing](CONTRIBUTING.md) for the fragment format and release process. The package uses the same `notes`
-command for its own GitHub Releases. Run `tox -e 3.15,type,pkg_meta` and `prek run --all-files` before a PR.
+command for its own GitHub Releases. Run `tox -e 3.15,type,pkg_meta,docs` and `prek run --all-files` before a PR.

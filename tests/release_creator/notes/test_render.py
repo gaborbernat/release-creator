@@ -158,14 +158,18 @@ def test_render_rst_omits_empty_category() -> None:
 @pytest.mark.parametrize(
     ("changelog", "issue_role", "message"),
     [
-        ("", "issue", "found 0"),
-        ("1.2.3 (today)\n======\n1.2.3 (today)\n======\n", "issue", "found 2"),
-        ("1.2.3 (today)\n======\n- Entry.\n", "issue", "outside a category"),
-        ("1.2.3 (today)\n======\nAn orphan paragraph.\n", "issue", "unexpected release text"),
-        ("1.2.3 (today)\n======\nUnsupported\n-----------\n", "issue", "unknown changelog category"),
-        ("1.2.3 (today)\n======\n", "bad", "invalid issue role"),
+        pytest.param("", "issue", "found 0", id="absent"),
+        pytest.param("1.2.3 (today)\n======\n1.2.3 (today)\n======\n", "issue", "found 2", id="duplicate"),
+        pytest.param("1.2.3 (today)\n======\n- Entry.\n", "issue", "outside a category", id="uncategorized"),
+        pytest.param("1.2.3 (today)\n======\nAn orphan paragraph.\n", "issue", "unexpected release text", id="orphan"),
+        pytest.param(
+            "1.2.3 (today)\n======\nUnsupported\n-----------\n",
+            "issue",
+            "unknown changelog category",
+            id="unknown-category",
+        ),
+        pytest.param("1.2.3 (today)\n======\n", "bad", "invalid issue role", id="issue-role"),
     ],
-    ids=["absent", "duplicate", "uncategorized", "orphan", "unknown-category", "issue-role"],
 )
 def test_render_rst_rejects_invalid_input(changelog: str, issue_role: str, message: str) -> None:
     with pytest.raises(ValueError, match=message):
@@ -175,15 +179,14 @@ def test_render_rst_rejects_invalid_input(changelog: str, issue_role: str, messa
 @pytest.mark.parametrize(
     ("changelog", "overrides", "message"),
     [
-        ("## 1.2.3 (today)\n", {"tag": "bad/tag"}, "invalid release tag"),
-        ("## 1.2.3 (today)\n", {"previous": "bad/tag"}, "invalid previous tag"),
-        ("## 1.2.3 (today)\n", {"repository": "bad"}, "invalid repository"),
-        ("## 1.2.3 (today)\n", {"artifact_url": "http://bad"}, "artifact URL"),
-        ("", {}, "found 0"),
-        ("## 1.2.3 (today)\n## 1.2.3 (today)\n", {}, "found 2"),
-        ("## 1.2.3 (today)\n### Maintenance\n", {}, "unknown changelog category"),
+        pytest.param("## 1.2.3 (today)\n", {"tag": "bad/tag"}, "invalid release tag", id="tag"),
+        pytest.param("## 1.2.3 (today)\n", {"previous": "bad/tag"}, "invalid previous tag", id="previous"),
+        pytest.param("## 1.2.3 (today)\n", {"repository": "bad"}, "invalid repository", id="repository"),
+        pytest.param("## 1.2.3 (today)\n", {"artifact_url": "http://bad"}, "artifact URL", id="artifact"),
+        pytest.param("", {}, "found 0", id="absent"),
+        pytest.param("## 1.2.3 (today)\n## 1.2.3 (today)\n", {}, "found 2", id="duplicate"),
+        pytest.param("## 1.2.3 (today)\n### Maintenance\n", {}, "unknown changelog category", id="category"),
     ],
-    ids=["tag", "previous", "repository", "artifact", "absent", "duplicate", "category"],
 )
 def test_render_markdown_rejects_invalid_input(
     changelog: str,
