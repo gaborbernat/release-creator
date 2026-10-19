@@ -2,6 +2,17 @@
 
 <!-- towncrier release notes start -->
 
+<a name="release-0-1-1"></a>
+
+## 0.1.1 (2026-10-19)
+
+<a name="release-0-1-1-fixed"></a>
+
+### Fixed
+
+- Keep verified new-contributor credits when GitHub links the contributor's first pull request with a URL
+  ([#4](https://github.com/tox-dev/release-creator/pull/4)).
+
 <a name="release-0-1-0"></a>
 
 ## 0.1.0 (2026-10-19)
