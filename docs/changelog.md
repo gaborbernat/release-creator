@@ -2,6 +2,17 @@
 
 <!-- towncrier release notes start -->
 
+<a name="release-0-4-0"></a>
+
+## 0.4.0 (2026-10-19)
+
+<a name="release-0-4-0-added"></a>
+
+### Added
+
+- Render older uncategorized release entries under Other changes without assigning a user-facing category to them
+  ([#9](https://github.com/tox-dev/release-creator/pull/9)) by [@gaborbernat](https://github.com/gaborbernat).
+
 <a name="release-0-3-0"></a>
 
 ## 0.3.0 (2026-10-19)
