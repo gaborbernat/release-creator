@@ -453,6 +453,27 @@ def test_render_rst_joins_wrapped_author_credit() -> None:
     )
 
 
+def test_render_rst_joins_wrapped_author_marker() -> None:
+    changelog = dedent("""\
+        1.2.3 (2026-10-18)
+        ==================
+
+        Fixed
+        -----
+
+        - Correct a long description. :pr:`42`
+          - by :user:`alice` and :user:`bob`.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
+        "- Correct a long description. [#42](https://github.com/tox-dev/example/pull/42) by @alice and @bob.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
 def test_render_rst_preserves_legacy_other_changes() -> None:
     changelog = "1.2.3 (today)\n==============\n\nOther changes\n-------------\n\n- Update development tooling.\n"
 

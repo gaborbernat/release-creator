@@ -282,7 +282,7 @@ def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) 
             sections.setdefault(category, [])
             index += 2
             continue
-        if line.startswith("- "):
+        if lines[index].startswith("- "):
             if category is None:
                 msg = f"release item outside a category: {line}"
                 raise ValueError(msg)
