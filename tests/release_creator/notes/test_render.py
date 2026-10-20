@@ -605,6 +605,33 @@ def test_render_rst_converts_explicit_author_link() -> None:
     ("source", "expected"),
     [
         pytest.param(
+            "`PEP 838 <https://peps.python.org/pep-0838/>`_",
+            "[PEP 838](https://peps.python.org/pep-0838/)",
+            id="named-link",
+        ),
+        pytest.param(
+            "`lxml <https://lxml.de/>`__",
+            "[lxml](https://lxml.de/)",
+            id="anonymous-link",
+        ),
+    ],
+)
+def test_render_rst_converts_external_link(source: str, expected: str) -> None:
+    changelog = f"1.2.3 (today)\n==============\n\nAdded\n-----\n\n- Read {source}.\n"
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-added"></a>\n\n### Features\n\n'
+        f"- Read {expected}.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
             ":meth:`AsyncReadWriteLock.close() <filelock.AsyncReadWriteLock.close>`",
             "`AsyncReadWriteLock.close()`",
             id="explicit-method-display",

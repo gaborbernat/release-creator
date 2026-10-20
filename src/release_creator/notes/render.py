@@ -358,6 +358,16 @@ def _convert_rst(line: str, repository: str, issue_role: str) -> str:
     )
     line = re.sub(
         r"""
+        `(?P<label>[^`<>]+)\ <       # RST link text and target separator
+        (?P<url>https?://[^<>\s]+)  # External HTTP URL
+        >`_{1,2}                    # Named or anonymous link suffix
+        """,
+        lambda match: f"[{match['label']}]({match['url']})",
+        line,
+        flags=re.VERBOSE,
+    )
+    line = re.sub(
+        r"""
         ``(?P<code>[^`]+)``   # RST inline code
         """,
         r"`\g<code>`",
