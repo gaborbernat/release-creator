@@ -81,19 +81,6 @@ jobs:
         run: uvx prek run --all-files
       - name: Build package
         run: uv build --python 3.15 --python-preference only-managed --sdist --wheel . --out-dir dist
-      - name: Fetch contributor metadata
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          previous=$(git tag --list | uv run --no-default-groups release-creator tags "$TAG" --previous)
-          if [[ -n "$previous" ]]; then
-            gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$TAG" -f previous_tag_name="$previous" --jq .body >"$RUNNER_TEMP/generated-notes.md"
-          else
-            gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$TAG" --jq .body >"$RUNNER_TEMP/generated-notes.md"
-          fi
       - name: Prepare contributor fixture
         if: github.event_name == 'pull_request'
         env:
@@ -112,7 +99,10 @@ jobs:
           if [[ -n "$previous" ]]; then
             args+=(--previous "$previous")
           fi
-          uv run --no-default-groups release-creator notes --changelog docs/changelog.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" "${args[@]}" >"$RUNNER_TEMP/release-notes.md"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            args+=(--generated-notes "$RUNNER_TEMP/generated-notes.md")
+          fi
+          uv run --no-default-groups release-creator notes --changelog docs/changelog.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" "${args[@]}" >"$RUNNER_TEMP/release-notes.md"
       - name: Inspect candidate artifacts
         if: github.event_name == 'pull_request'
         env:
