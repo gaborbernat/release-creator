@@ -4,6 +4,7 @@ requires = [ "hatch-fancy-pypi-readme>=25.1", "hatch-vcs>=0.5", "hatchling>=1.32
 
 [project]
 name = "release-creator"
+import-names = [ "release_creator" ]
 description = "Release preparation tools for changelogs and GitHub"
 keywords = [ "changelog", "GitHub releases", "release automation", "release notes", "towncrier" ]
 license = "MIT"
@@ -13,7 +14,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
@@ -25,7 +25,9 @@ classifiers = [
 ]
 dynamic = [ "readme", "version" ]
 dependencies = [ "mdformat>=1,<2", "mdformat-gfm>=1,<2", "tomli-w>=1.2" ]
+urls.Changelog = "https://release-creator.readthedocs.io/en/latest/changelog.html"
 urls.Documentation = "https://release-creator.readthedocs.io/"
+urls.Homepage = "https://release-creator.readthedocs.io/"
 urls.Source = "https://github.com/tox-dev/release-creator"
 urls.Tracker = "https://github.com/tox-dev/release-creator/issues"
 scripts.release-creator = "release_creator.cli:main"
