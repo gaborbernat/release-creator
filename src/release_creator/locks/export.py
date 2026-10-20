@@ -72,16 +72,20 @@ def _project_selections(
     projects.extend(
         tomllib.loads((project.parent / member / "pyproject.toml").read_text(encoding="utf-8")) for member in members
     )
-    ranges = {item["project"]["requires-python"] for item in projects if "requires-python" in item.get("project", {})}
+    ranges = {
+        str(item["project"]["requires-python"]) for item in projects if "requires-python" in item.get("project", {})
+    }
     if len(ranges) > 1:
         msg = "workspace members must share a requires-python range"
         raise ValueError(msg)
     if (requires_python := next(iter(ranges), tool_python)) is None:
         msg = "declare [project].requires-python or pass --tool-python for a tool-only project"
         raise ValueError(msg)
-    groups = list(dict.fromkeys(group for item in projects for group in item.get("dependency-groups", {})))
+    groups = list(dict.fromkeys(str(group) for item in projects for group in item.get("dependency-groups", {})))
     extras = list(
-        dict.fromkeys(extra for item in projects for extra in item.get("project", {}).get("optional-dependencies", {}))
+        dict.fromkeys(
+            str(extra) for item in projects for extra in item.get("project", {}).get("optional-dependencies", {})
+        )
     )
     return (
         requires_python,
