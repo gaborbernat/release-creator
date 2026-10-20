@@ -20,21 +20,24 @@ if TYPE_CHECKING:
             "+first.feature.md",
             "Add a feature by [@alice](https://github.com/alice).\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="markdown-credit",
         ),
         pytest.param(
             "+first.feature.md",
             "Add a feature, by [@alice](https://github.com/alice).\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="markdown-credit-with-comma",
         ),
         pytest.param(
             "+first.feature.md",
             "Add a feature.\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="markdown-resolved-author",
         ),
         pytest.param(
@@ -83,7 +86,8 @@ if TYPE_CHECKING:
             "42.feature.md",
             "Add a feature.\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="numbered-markdown-author",
         ),
         pytest.param(
@@ -104,14 +108,17 @@ if TYPE_CHECKING:
             "42.feature.md",
             "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="numbered-existing-link",
         ),
         pytest.param(
             "42.feature.md",
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="numbered-existing-link-and-credit",
         ),
         pytest.param(

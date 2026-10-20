@@ -156,9 +156,15 @@ def test_fragments_cli_reads_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     numbered.write_text("Document a feature by a contributor.\n")
     git = shutil.which("git")
     assert git is not None
-    subprocess.run([git, "init", "-q", str(tmp_path)], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed Git setup in a temp repo.
-    subprocess.run([git, "-C", str(tmp_path), "add", "changelog.d"], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]  # Git test setup.
-    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Git test setup with fixed flags and temp path.
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Git fixture.
+        [git, "init", "-q", str(tmp_path)],
+        check=True,
+    )
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Git fixture.
+        [git, "-C", str(tmp_path), "add", "changelog.d"],
+        check=True,
+    )
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Git fixture.
         [
             git,
             "-C",

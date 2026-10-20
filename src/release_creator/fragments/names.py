@@ -1,4 +1,4 @@
-"""Find fragment files with names that release preparation can link."""
+"""Keep unlinked fragments out of release output."""
 
 lazy from pathlib import Path
 
@@ -23,7 +23,7 @@ def pending_fragments(directory: Path) -> list[Path]:
 
 
 def fragment_number(fragment: Path) -> str | None:
-    """Return a numeric fragment's issue number.
+    """Recognize legacy issue-number fragments before finding their pull requests.
 
     Returns:
         The filename's issue number, or None for a named fragment.

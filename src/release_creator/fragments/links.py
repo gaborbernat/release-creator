@@ -49,7 +49,7 @@ def add_pull_request_links(
     commit_subjects: dict[str, str],
     authors: dict[str, PullRequestAuthor] | None = None,
 ) -> None:
-    """Link each fragment and add its verified author when available."""
+    """Keep fragment links and credits tied to their introducing pull requests."""
     validate_repository(repository)
     updates: list[tuple[Path, str]] = [
         (fragment, _link_fragment(fragment, repository, commit_subjects, authors))

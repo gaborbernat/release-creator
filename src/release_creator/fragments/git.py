@@ -1,14 +1,14 @@
 """Read introducing squash subjects from Git history."""
 
 import shutil
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Fragment provenance comes from the local Git checkout.
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Git history supplies fragment provenance.
 lazy from pathlib import Path
 
 lazy from release_creator.fragments.names import pending_fragments
 
 
 def commit_subjects_from_git(directory: Path) -> dict[str, str]:
-    """Read the commit subject that first added each fragment.
+    """Use each fragment's first-add commit to identify its pull request.
 
     Returns:
         Fragment filenames mapped to their introducing subjects.
@@ -23,7 +23,7 @@ def commit_subjects_from_git(directory: Path) -> dict[str, str]:
         raise FileNotFoundError(msg)
     subjects: dict[str, str] = {}
     for fragment in pending_fragments(directory):
-        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed Git command; the fragment path is a separate argument.
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed Git argv.
             [git, "log", "-1", "--format=%s", "--diff-filter=A", "HEAD", "--", str(fragment)],
             capture_output=True,
             check=False,

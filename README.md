@@ -3,8 +3,8 @@
 ![release-creator logo](docs/_static/logo-128.png)
 
 [![PyPI](https://img.shields.io/pypi/v/release-creator?style=flat-square)](https://pypi.org/project/release-creator/)
-[![Supported Python versions](https://img.shields.io/pypi/pyversions/release-creator.svg)](https://pypi.org/project/release-creator/)
-[![check](https://github.com/tox-dev/release-creator/actions/workflows/check.yaml/badge.svg)](https://github.com/tox-dev/release-creator/actions/workflows/check.yaml)
+[![Supported Python versions](https://img.shields.io/pypi/pyversions/release-creator.svg)][pypi]
+[![check](https://github.com/tox-dev/release-creator/actions/workflows/check.yaml/badge.svg)][checks]
 
 Release preparation tools for Python projects. The `notes` command renders a tagged changelog section for a GitHub
 Release. Other release tasks can use separate commands.
@@ -68,3 +68,6 @@ git tag --list | uvx --from 'release-creator' release-creator tags 1.2.3 --previ
 
 See [contributing](CONTRIBUTING.md) for the fragment format and release process. The package uses the same `notes`
 command for its own GitHub Releases. Run `tox -e 3.15,type,pkg_meta,docs` and `prek run --all-files` before a PR.
+
+[checks]: https://github.com/tox-dev/release-creator/actions/workflows/check.yaml
+[pypi]: https://pypi.org/project/release-creator/

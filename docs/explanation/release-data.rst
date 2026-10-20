@@ -7,7 +7,8 @@ builds the changelog from reviewed fragments. ``tags`` checks the version agains
 tagged changelog to make the GitHub description.
 
 .. mermaid::
-   :alt: The tagged changelog provides release changes and credited authors; GitHub generated notes contribute only verified first-time contributors to the final GitHub Release body.
+   :alt: The tagged changelog provides release changes and credited authors; GitHub generated notes contribute only
+      verified first-time contributors to the final GitHub Release body.
    :caption: Sources for a GitHub Release body
    :align: center
 
