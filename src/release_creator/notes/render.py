@@ -53,9 +53,9 @@ _RE_GENERATED_PR_AUTHOR: Final = re.compile(
 _RE_RST_VERSION: Final = re.compile(
     r"""
     ^(?:
-        v?(?P<tag>\d+\.\d+(?:\.\d+)?)\ \((?P<date>[^)]+)\)  # Plain version with parenthesized date
+        (?P<tag>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?)\ \((?P<date>[^)]+)\)  # Version and date
         |
-        `(?P<link_tag>\d+\.\d+(?:\.\d+)?)\ <https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/
+        `(?P<link_tag>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?)\ <https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/
         (?P=link_tag)>`_\ -\ (?P<link_date>\d{4}-\d{2}-\d{2})  # Linked version with date
     )$
     """,
@@ -71,7 +71,7 @@ _RE_MARKDOWN_VERSION: Final = re.compile(
     r"""
     ^(?P<level>\#{2,3})\          # Markdown version heading level
     (?P<open>\[)?                   # Optional Keep a Changelog link bracket
-    (?P<tag>v?\d+\.\d+(?:\.\d+)?)  # Release tag with optional patch component
+    (?P<tag>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?)  # Release version, including historical prereleases
     (?(open)\])                     # Close the optional bracket
     (?:\ \([^)]+\)|\ -\ [^\n]+)? # Parenthesized or dash-separated date
     $                               # End of heading
@@ -81,7 +81,7 @@ _RE_MARKDOWN_VERSION: Final = re.compile(
 _RE_MARKDOWN_VERSION_ANCHOR: Final = re.compile(
     r"""
     ^<a\ name="release-             # Version anchor prefix
-    (?P<version>v?\d+(?:-\d+){1,2})  # Dotted version encoded for an anchor
+    (?P<version>v?\d+(?:-\d+){1,3}(?:(?:a|b|rc)\d*)?)  # Version encoded for an anchor
     "></a>$                         # Anchor terminator
     """,
     re.VERBOSE,
@@ -95,7 +95,7 @@ _RE_MARKDOWN_AUTHOR: Final = re.compile(
 )
 _RE_MARKDOWN_LINK_DEFINITION: Final = re.compile(
     r"""
-    ^\[(?P<version>v?\d+\.\d+(?:\.\d+)?|unreleased)\]:  # Version comparison reference
+    ^\[(?P<version>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?|unreleased)\]:  # Version reference
     \s+https://github\.com/[^\s]+                    # GitHub destination
     $                                                   # End of definition
     """,
@@ -274,7 +274,7 @@ def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) 
         index
         for index, line in enumerate(lines)
         if (match := _RE_RST_VERSION.fullmatch(line.strip()))
-        and (match["tag"] or match["link_tag"]) == context.tag.removeprefix("v")
+        and (match["tag"] or match["link_tag"]).removeprefix("v") == context.tag.removeprefix("v")
     ]
     if len(headings) != 1:
         msg = f"expected one changelog section for {context.tag}, found {len(headings)}"
@@ -297,18 +297,25 @@ def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) 
             if category is None:
                 msg = f"release item outside a category: {line}"
                 raise ValueError(msg)
-            sections[category].append(_convert_rst(line, context.repository, issue_role))
+            sections[category].append(line)
         elif line and _RE_RST_HEADING_UNDERLINE.fullmatch(line) is None and not line.startswith(".. _"):
             if category is None or not sections[category]:
                 msg = f"unexpected release text: {line}"
                 raise ValueError(msg)
-            sections[category][-1] += f" {_convert_rst(line, context.repository, issue_role)}"
+            sections[category][-1] += f" {line}"
         index += 1
     body: list[str] = []
     for name, entries in sections.items():
         if entries:
             anchor = f"release-{context.tag.replace('.', '-')}-{name.lower().replace(' ', '-')}"
-            body.extend((f'<a name="{anchor}"></a>', "", f"### {_CATEGORIES[name]}", "", *entries, ""))
+            body.extend((
+                f'<a name="{anchor}"></a>',
+                "",
+                f"### {_CATEGORIES[name]}",
+                "",
+                *(_convert_rst(entry, context.repository, issue_role) for entry in entries),
+                "",
+            ))
     return "\n".join(body).strip()
 
 

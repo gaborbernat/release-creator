@@ -132,6 +132,45 @@ def test_render_markdown_accepts_existing_version_headings(heading: str) -> None
     )
 
 
+@pytest.mark.parametrize(
+    "tag",
+    [
+        pytest.param("v2.0.0a1", id="alpha"),
+        pytest.param("2.0.0b1", id="beta"),
+        pytest.param("1.10rc1", id="two-part-candidate"),
+        pytest.param("v1.3.4rc", id="candidate-without-number"),
+        pytest.param("0.10.2.0", id="four-part"),
+    ],
+)
+def test_render_markdown_accepts_historical_version_shapes(tag: str) -> None:
+    changelog = dedent(f"""\
+        <a name="release-{tag.replace(".", "-")}"></a>
+
+        ## {tag} (2021-05-13)
+
+        ### Fixed
+
+        - Correct the current release.
+
+        <a name="release-0-1-0a1"></a>
+
+        ## 0.1.0a1 (2020-01-01)
+
+        ### Added
+
+        - An older change.
+
+        [{tag}]: https://github.com/tox-dev/example/commits/{tag}
+        """)
+
+    result = render_markdown(changelog, ReleaseContext(tag=tag, repository="tox-dev/example"))
+
+    assert result == (
+        "### Bug fixes\n\n- Correct the current release.\n\n"
+        f"**Full Changelog**: https://github.com/tox-dev/example/commits/{tag}\n"
+    )
+
+
 def test_render_markdown_selects_package_history() -> None:
     changelog = dedent("""\
         # Changelog
@@ -380,6 +419,27 @@ def test_render_rst_maps_categories_and_credits() -> None:
     )
 
 
+def test_render_rst_joins_wrapped_author_credit() -> None:
+    changelog = dedent("""\
+        1.2.3 (2026-10-18)
+        ==================
+
+        Fixed
+        -----
+
+        - Correct a long description. :pr:`42` - by
+          :user:`alice` and :user:`bob`.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
+        "- Correct a long description. [#42](https://github.com/tox-dev/example/pull/42) by @alice and @bob.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
 def test_render_rst_preserves_legacy_other_changes() -> None:
     changelog = "1.2.3 (today)\n==============\n\nOther changes\n-------------\n\n- Update development tooling.\n"
 
@@ -409,6 +469,83 @@ def test_render_rst_accepts_two_part_historical_tags(heading: str) -> None:
         "### Other changes\n\n- Old maintenance entry.\n\n"
         "**Full Changelog**: https://github.com/tox-dev/example/commits/0.2\n"
     )
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        pytest.param("v2.0.0a1", id="alpha"),
+        pytest.param("2.0.0b1", id="beta"),
+        pytest.param("1.10rc1", id="two-part-candidate"),
+        pytest.param("v1.3.4rc", id="candidate-without-number"),
+        pytest.param("0.10.2.0", id="four-part"),
+    ],
+)
+def test_render_rst_accepts_historical_version_shapes(tag: str) -> None:
+    changelog = dedent(f"""\
+        {tag} (2021-05-13)
+        ==================
+
+        Fixed
+        -----
+
+        - Correct the current release.
+
+        0.1.0 (2020-01-01)
+        ==================
+
+        Added
+        -----
+
+        - An older change.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag=tag, repository="tox-dev/example"))
+
+    assert result == (
+        f'<a name="release-{tag.replace(".", "-")}-fixed"></a>\n\n'
+        "### Bug fixes\n\n- Correct the current release.\n\n"
+        f"**Full Changelog**: https://github.com/tox-dev/example/commits/{tag}\n"
+    )
+
+
+def test_render_rst_accepts_linked_prerelease_heading() -> None:
+    changelog = dedent("""\
+        `v2.0.0a1 <https://github.com/tox-dev/example/tree/v2.0.0a1>`_ - 2021-05-13
+        ===========================================================================
+
+        Added
+        -----
+
+        - Add the first release.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="v2.0.0a1", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-v2-0-0a1-added"></a>\n\n'
+        "### Features\n\n- Add the first release.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/v2.0.0a1\n"
+    )
+
+
+def test_render_rst_omits_empty_prerelease_section() -> None:
+    changelog = dedent("""\
+        v2.0.0a2 (2021-05-13)
+        =====================
+
+        v2.0.0a1 (2021-05-13)
+        =====================
+
+        Added
+        -----
+
+        - Add the first release.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="v2.0.0a2", repository="tox-dev/example"))
+
+    assert result == "**Full Changelog**: https://github.com/tox-dev/example/commits/v2.0.0a2\n"
 
 
 def test_render_rst_rejects_package_selection() -> None:
