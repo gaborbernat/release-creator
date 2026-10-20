@@ -6,11 +6,12 @@ lazy import subprocess  # ruff: ignore[suspicious-subprocess-import]  # uv owns 
 lazy import tomllib
 lazy from collections import defaultdict
 lazy from pathlib import Path
+lazy from typing import Any
 
 lazy import tomli_w
 
 
-def export_lock(project: Path, output: Path) -> None:
+def export_lock(project: Path, output: Path, tool_python: str | None = None) -> None:
     """Export each resolved group and extra with its selection marker.
 
     Raises:
@@ -19,11 +20,7 @@ def export_lock(project: Path, output: Path) -> None:
 
     """
     data = tomllib.loads(project.read_text(encoding="utf-8"))
-    if "project" not in data or "requires-python" not in data["project"]:
-        msg = "the project must declare [project].requires-python"
-        raise ValueError(msg)
-    groups = list(data.get("dependency-groups", {}))
-    extras = list(data["project"].get("optional-dependencies", {}))
+    requires_python, groups, extras, export_scope = _project_selections(project, data, tool_python)
     if "project-runtime" in groups:
         msg = "project-runtime is reserved for the project's runtime dependencies"
         raise ValueError(msg)
@@ -40,7 +37,7 @@ def export_lock(project: Path, output: Path) -> None:
         selections.extend((group, "dependency_groups", ["--only-group", group]) for group in groups)
         selections.extend((extra, "extras", ["--no-default-groups", "--extra", extra]) for extra in extras)
         for name, kind, options in selections:
-            exported = _run_uv(uv, project.parent, "export", "--format", "pylock.toml", "--no-emit-project", *options)
+            exported = _run_uv(uv, project.parent, "export", "--format", "pylock.toml", *export_scope, *options)
             for package in tomllib.loads(exported)["packages"]:
                 environment = package.pop("marker", None)
                 key = json.dumps(package, sort_keys=True, default=str)
@@ -50,7 +47,7 @@ def export_lock(project: Path, output: Path) -> None:
         lock = {
             "lock-version": "1.0",
             "created-by": "release-creator (uv)",
-            "requires-python": data["project"]["requires-python"],
+            "requires-python": requires_python,
             "extras": extras,
             "dependency-groups": ["project-runtime", *groups],
             "default-groups": [],
@@ -65,6 +62,33 @@ def export_lock(project: Path, output: Path) -> None:
     finally:
         if created_lock:
             lock_path.unlink(missing_ok=True)
+
+
+def _project_selections(
+    project: Path, data: dict[str, Any], tool_python: str | None
+) -> tuple[str, list[str], list[str], list[str]]:
+    members = data.get("tool", {}).get("uv", {}).get("workspace", {}).get("members", [])
+    projects = [data]
+    projects.extend(
+        tomllib.loads((project.parent / member / "pyproject.toml").read_text(encoding="utf-8")) for member in members
+    )
+    ranges = {item["project"]["requires-python"] for item in projects if "requires-python" in item.get("project", {})}
+    if len(ranges) > 1:
+        msg = "workspace members must share a requires-python range"
+        raise ValueError(msg)
+    if (requires_python := next(iter(ranges), tool_python)) is None:
+        msg = "declare [project].requires-python or pass --tool-python for a tool-only project"
+        raise ValueError(msg)
+    groups = list(dict.fromkeys(group for item in projects for group in item.get("dependency-groups", {})))
+    extras = list(
+        dict.fromkeys(extra for item in projects for extra in item.get("project", {}).get("optional-dependencies", {}))
+    )
+    return (
+        requires_python,
+        groups,
+        extras,
+        ["--all-packages", "--no-emit-workspace"] if members else ["--no-emit-project"],
+    )
 
 
 def _run_uv(uv: str, directory: Path, *arguments: str) -> str:

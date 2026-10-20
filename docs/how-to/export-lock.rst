@@ -25,5 +25,10 @@ previous ``pylock.toml`` intact and prints uv's error. For a library that suppor
 its ``docs`` group, declare that group's Python minimum under ``[tool.uv.dependency-groups]``. uv cannot infer that
 the group is optional from the library's runtime ``requires-python`` alone.
 
-The command requires ``[project].requires-python``. It reserves the ``project-runtime`` group name for the lock's
-runtime selection. Projects without Python package metadata need a tool-only ``pyproject.toml`` before using it.
+The command reads ``[project].requires-python``. For a tool-only ``pyproject.toml`` without ``[project]``, pass
+``--tool-python '>=3.15'`` to describe its release-tool environment. It reserves the ``project-runtime`` group
+name for the lock's runtime selection.
+
+At a uv workspace root, the command includes every listed member and combines their groups and extras. Members
+must declare the same ``requires-python`` range; a mismatch fails before writing a lock. The root can omit
+``[project]`` when its members provide that range.

@@ -70,6 +70,47 @@ def test_export_lock_removes_generated_uv_lock(tmp_path: Path) -> None:
     assert not (tmp_path / "uv.lock").exists()
 
 
+def test_export_lock_accepts_tool_only_project(tmp_path: Path) -> None:
+    project = tmp_path / "pyproject.toml"
+    project.write_text("[dependency-groups]\nrelease = []\n")
+
+    export_lock(project, tmp_path / "pylock.toml", ">=3.15")
+
+    lock = tomllib.loads((tmp_path / "pylock.toml").read_text())
+    assert (lock["requires-python"], lock["dependency-groups"]) == (">=3.15", ["project-runtime", "release"])
+
+
+def test_export_lock_includes_workspace_groups(tmp_path: Path) -> None:
+    project = tmp_path / "pyproject.toml"
+    project.write_text('[tool.uv.workspace]\nmembers = ["one", "two"]\n')
+    for name, group in (("one", "test"), ("two", "release")):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "pyproject.toml").write_text(
+            f"[project]\nname = '{name}'\nversion = '1.0'\nrequires-python = '>=3.11'\n"
+            f"[dependency-groups]\n{group} = []\n"
+        )
+
+    export_lock(project, tmp_path / "pylock.toml")
+
+    lock = tomllib.loads((tmp_path / "pylock.toml").read_text())
+    assert (lock["requires-python"], lock["dependency-groups"]) == (">=3.11", ["project-runtime", "test", "release"])
+
+
+def test_export_lock_rejects_workspace_python_mismatch(tmp_path: Path) -> None:
+    project = tmp_path / "pyproject.toml"
+    project.write_text('[tool.uv.workspace]\nmembers = ["one", "two"]\n')
+    for name, python in (("one", ">=3.11"), ("two", ">=3.12")):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "pyproject.toml").write_text(
+            f"[project]\nname = '{name}'\nversion = '1.0'\nrequires-python = '{python}'\n"
+        )
+
+    with pytest.raises(ValueError, match="workspace members must share"):
+        export_lock(project, tmp_path / "pylock.toml")
+
+
 @pytest.mark.parametrize(
     ("project_text", "message"),
     [
