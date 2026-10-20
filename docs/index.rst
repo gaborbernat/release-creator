@@ -2,8 +2,8 @@
 release-creator
 ###############
 
-``release-creator`` links changelog fragments to squash pull requests, validates release tags, and renders
-GitHub Release notes from the tagged changelog. Install a published version with
+``release-creator`` links changelog fragments to squash pull requests, validates release tags, renders
+GitHub Release notes, and exports selectable project locks. Install a published version with
 ``uvx --from release-creator release-creator``.
 
 The three commands run at different points in a release:
@@ -23,6 +23,9 @@ The three commands run at different points in a release:
    * - :doc:`notes <how-to/render-notes>`
      - After the changelog and tag exist
      - Prints the GitHub Release body from the tagged changelog
+   * - :doc:`locks <how-to/export-lock>`
+     - When project dependencies change or during the weekly lock refresh
+     - Writes one ``pylock.toml`` for runtime dependencies, groups, and extras
 
 Start with the tutorial for a complete release. Use the how-to guides for an existing project. The reference lists
 flags and input formats; the explanation covers the source of each part of a GitHub Release.
@@ -43,6 +46,7 @@ The :doc:`changelog <changelog>` includes an ``Unreleased`` section in PR builds
    how-to/link-fragments
    how-to/render-notes
    how-to/select-release-tag
+   how-to/export-lock
 
 .. toctree::
    :caption: Reference

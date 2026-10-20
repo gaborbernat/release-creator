@@ -3,6 +3,7 @@
 import argparse
 
 lazy from release_creator.fragments.cli import register as register_fragments
+lazy from release_creator.locks.cli import register as register_locks
 lazy from release_creator.notes.cli import register as register_notes
 lazy from release_creator.tags.cli import register as register_tags
 
@@ -29,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_notes(commands)
     register_fragments(commands)
     register_tags(commands)
+    register_locks(commands)
     return parser
 
 
