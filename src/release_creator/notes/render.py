@@ -371,9 +371,13 @@ def _convert_rst(line: str, repository: str, issue_role: str) -> str:
     line = re.sub(
         r"""
         :(?:[a-z]+:)?[a-z]+:`  # RST role with optional domain
-        ~?(?P<name>[^`]+)`     # Referenced name, with optional short display
+        (?:
+            (?P<display>[^<>`]+)\s+<(?P<target>[^<>`]+)>  # Explicit display and target
+            |
+            ~?(?P<name>[^`]+)                             # Referenced name, optionally shortened
+        )`
         """,
-        lambda match: f"`{match['name'].split('.')[-1]}`",
+        lambda match: f"`{match['display'] or match['name'].split('.')[-1]}`",
         line,
         flags=re.VERBOSE,
     )

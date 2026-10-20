@@ -430,6 +430,35 @@ def test_render_rst_converts_explicit_author_link() -> None:
     assert "- Accept absolute `file:///` URLs ([#3](https://github.com/tox-dev/example/pull/3)) by @alice." in result
 
 
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
+            ":meth:`AsyncReadWriteLock.close() <filelock.AsyncReadWriteLock.close>`",
+            "`AsyncReadWriteLock.close()`",
+            id="explicit-method-display",
+        ),
+        pytest.param(
+            ":class:`the lock <filelock.ReadWriteLock>`",
+            "`the lock`",
+            id="explicit-class-display",
+        ),
+        pytest.param(":class:`~filelock.ReadWriteLock`", "`ReadWriteLock`", id="short-reference"),
+        pytest.param(":data:`math.inf`", "`inf`", id="plain-reference"),
+    ],
+)
+def test_render_rst_keeps_role_display(source: str, expected: str) -> None:
+    changelog = f"1.2.3 (today)\n==============\n\nFixed\n-----\n\n- Call {source}.\n"
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
+        f"- Call {expected}.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
 def test_render_rst_keeps_issue_role_as_issue() -> None:
     changelog = "1.2.3 (today)\n==============\n\nFixed\n-----\n\n- Fix a bug (:issue:`5`).\n"
     result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
