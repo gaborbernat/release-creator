@@ -16,12 +16,24 @@ def pending_fragments(directory: Path) -> list[Path]:
     fragments = sorted(path for extension in ("md", "rst") for path in directory.glob(f"*.*.{extension}"))
     for fragment in fragments:
         stem = fragment.name.partition(".")[0]
-        if not ((stem.startswith("+") and len(stem) > 1) or (stem.isascii() and stem.isdecimal())):
+        if not ((stem.startswith("+") and len(stem) > 1) or fragment_number(fragment) is not None):
             msg = f"unsupported changelog fragment name {fragment.name!r}; prefix a name with + or use a PR number"
             raise ValueError(msg)
     return fragments
 
 
+def fragment_number(fragment: Path) -> str | None:
+    """Return a numeric fragment's issue number.
+
+    Returns:
+        The filename's issue number, or None for a named fragment.
+
+    """
+    stem = fragment.name.partition(".")[0]
+    return stem if stem.isascii() and stem.isdecimal() else None
+
+
 __all__ = [
+    "fragment_number",
     "pending_fragments",
 ]

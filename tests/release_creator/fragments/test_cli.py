@@ -91,6 +91,41 @@ def test_fragments_cli_resolves_authors(tmp_path: Path, monkeypatch: pytest.Monk
     resolve.assert_called_once_with("tox-dev/example", {"+topic.feature.md": "Add a feature (#3)"})
 
 
+def test_fragments_cli_resolves_numbered_issue_author(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    directory = tmp_path / "changelog.d"
+    directory.mkdir()
+    fragment = directory / "3.feature.md"
+    fragment.write_text("Add a feature.\n")
+    commits = tmp_path / "commits.tsv"
+    commits.write_text("3.feature.md\tAdd a feature (#4)\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "release-creator",
+            "fragments",
+            "--repository",
+            "tox-dev/example",
+            "--commit-map",
+            str(commits),
+            "--resolve-authors",
+        ],
+    )
+    resolve = create_autospec(
+        fragments_cli.pull_request_authors,
+        return_value={"4": PullRequestAuthor(handle="alice", is_bot=False)},
+    )
+    monkeypatch.setattr(fragments_cli, "pull_request_authors", resolve)
+
+    main()
+
+    assert fragment.read_text() == (
+        "Add a feature ([#4](https://github.com/tox-dev/example/pull/4)) by [@alice](https://github.com/alice).\n"
+    )
+    resolve.assert_called_once_with("tox-dev/example", {"3.feature.md": "Add a feature (#4)"})
+
+
 def test_fragments_cli_reports_missing_commit_map(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -144,7 +179,10 @@ def test_fragments_cli_reads_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     main()
 
     assert fragment.read_text() == "Add a feature ([#3](https://github.com/tox-dev/example/pull/3)).\n"
-    assert numbered.read_text() == "Document a feature by a contributor.\n"
+    assert (
+        numbered.read_text()
+        == "Document a feature by a contributor ([#3](https://github.com/tox-dev/example/pull/3)).\n"
+    )
 
 
 def test_fragments_cli_reports_git_error(

@@ -2,7 +2,7 @@
 release-creator
 ###############
 
-``release-creator`` links named changelog fragments to squash pull requests, validates release tags, and renders
+``release-creator`` links changelog fragments to squash pull requests, validates release tags, and renders
 GitHub Release notes from the tagged changelog. Install a published version with
 ``uvx --from release-creator release-creator``.
 
@@ -16,7 +16,7 @@ The three commands run at different points in a release:
      - Result
    * - :doc:`fragments <how-to/link-fragments>`
      - After squash merge, before Towncrier builds the changelog
-     - Adds the pull request link to each named fragment
+     - Adds the pull request link to each named or numbered fragment
    * - :doc:`tags <how-to/select-release-tag>`
      - Before preparing a release, then when making the comparison link
      - Checks the version or prints its predecessor

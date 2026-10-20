@@ -9,15 +9,24 @@ lazy from pathlib import Path
 
 import pytest
 
+from release_creator.fragments.links import add_pull_request_links
+from release_creator.fragments.pull_requests import PullRequestAuthor
 from release_creator.notes.render import ReleaseContext, render_markdown, render_rst
 
 
-def test_markdown_template_keeps_numbered_and_named_pull_requests(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("number", "issue_suffix"),
+    [
+        pytest.param("123", "", id="same-pr-and-issue"),
+        pytest.param("125", " ([#123](https://github.com/tox-dev/example/issues/123))", id="separate-pr-and-issue"),
+    ],
+)
+def test_markdown_template_keeps_numbered_and_named_pull_requests(
+    tmp_path: Path, number: str, issue_suffix: str
+) -> None:
     (tmp_path / "changelog.d").mkdir()
     (tmp_path / "changelog.d" / "123.bugfix.md").write_text("Fix a numbered bug.\n")
-    (tmp_path / "changelog.d" / "+named.bugfix.md").write_text(
-        "Fix a named bug ([#124](https://github.com/tox-dev/example/pull/124)) by [@alice](https://github.com/alice).\n"
-    )
+    (tmp_path / "changelog.d" / "+named.bugfix.md").write_text("Fix a named bug.\n")
     (tmp_path / "CHANGELOG.md").write_text("# Changelog\n\n<!-- towncrier release notes start -->\n")
     (tmp_path / "pyproject.toml").write_text(
         dedent("""\
@@ -27,11 +36,21 @@ def test_markdown_template_keeps_numbered_and_named_pull_requests(tmp_path: Path
         filename = "CHANGELOG.md"
         template = "release_creator.fragments:template.jinja2"
         title_format = false
-        issue_format = "[#{issue}](https://github.com/tox-dev/example/pull/{issue})"
+        issue_format = "[#{issue}](https://github.com/tox-dev/example/issues/{issue})"
         type = [
           { directory = "bugfix", name = "Fixed", showcontent = true },
         ]
         """)
+    )
+    add_pull_request_links(
+        tmp_path / "changelog.d",
+        "tox-dev/example",
+        {"+named.bugfix.md": "Fix a named bug (#124)", "123.bugfix.md": f"Fix a numbered bug (#{number})"},
+        {
+            "123": PullRequestAuthor(handle="alice", is_bot=False),
+            "124": PullRequestAuthor(handle="alice", is_bot=False),
+            "125": PullRequestAuthor(handle="alice", is_bot=False),
+        },
     )
 
     subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed command and temporary checkout.
@@ -46,7 +65,8 @@ def test_markdown_template_keeps_numbered_and_named_pull_requests(tmp_path: Path
         ReleaseContext(tag="1.2.3", repository="tox-dev/example"),
     ) == (
         '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
-        "- Fix a numbered bug. ([#123](https://github.com/tox-dev/example/pull/123))\n"
+        f"- Fix a numbered bug ([#{number}](https://github.com/tox-dev/example/pull/{number})) "
+        f"by @alice.{issue_suffix}\n"
         "- Fix a named bug ([#124](https://github.com/tox-dev/example/pull/124)) by @alice.\n\n"
         "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
     )
@@ -86,6 +106,12 @@ def test_rst_template_renders_notes_with_stable_anchors(
         ]
         """).replace("@UNDERLINES@", underlines)
     )
+    add_pull_request_links(
+        tmp_path / "changelog.d",
+        "tox-dev/example",
+        {"1.bugfix.rst": "Fix the loader (#2)"},
+        {"2": PullRequestAuthor(handle="alice", is_bot=False)},
+    )
 
     subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed command and temporary checkout.
         [str(Path(sys.executable).with_name("towncrier")), "build", "--yes", "--version", "1.2.3"],
@@ -101,6 +127,7 @@ def test_rst_template_renders_notes_with_stable_anchors(
         ReleaseContext(tag="1.2.3", repository="tox-dev/example"),
     ) == (
         '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
-        "- Fix the loader. ([#1](https://github.com/tox-dev/example/pull/1))\n\n"
+        "- Fix the loader ([#2](https://github.com/tox-dev/example/pull/2)) by @alice. "
+        "([#1](https://github.com/tox-dev/example/pull/1))\n\n"
         "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
     )

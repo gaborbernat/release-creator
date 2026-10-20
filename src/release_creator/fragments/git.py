@@ -8,7 +8,7 @@ lazy from release_creator.fragments.names import pending_fragments
 
 
 def commit_subjects_from_git(directory: Path) -> dict[str, str]:
-    """Read the commit subject that first added each named fragment.
+    """Read the commit subject that first added each fragment.
 
     Returns:
         Fragment filenames mapped to their introducing subjects.
@@ -23,8 +23,6 @@ def commit_subjects_from_git(directory: Path) -> dict[str, str]:
         raise FileNotFoundError(msg)
     subjects: dict[str, str] = {}
     for fragment in pending_fragments(directory):
-        if not fragment.name.startswith("+"):
-            continue
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed Git command; the fragment path is a separate argument.
             [git, "log", "-1", "--format=%s", "--diff-filter=A", "HEAD", "--", str(fragment)],
             capture_output=True,

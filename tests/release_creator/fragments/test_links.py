@@ -79,6 +79,48 @@ if TYPE_CHECKING:
             "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
             id="bot-author",
         ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature.\n",
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            id="numbered-markdown-author",
+        ),
+        pytest.param(
+            "42.feature.rst",
+            "Add a feature.\n",
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            "Add a feature (:pr:`42`) by :user:`alice`.\n",
+            id="numbered-rst-author",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature.\n",
+            {"42": PullRequestAuthor(handle="dependabot", is_bot=True)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="numbered-bot",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            id="numbered-existing-link",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            id="numbered-existing-link-and-credit",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            {"42": PullRequestAuthor(handle="dependabot", is_bot=True)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="numbered-existing-link-and-bot",
+        ),
     ],
 )
 def test_add_pull_request_links(
@@ -113,19 +155,29 @@ def test_add_pull_request_links_preserves_shared_credits(tmp_path: Path) -> None
     )
 
 
-def test_add_pull_request_links_leaves_numbered_fragment(tmp_path: Path) -> None:
+def test_add_pull_request_links_preserves_numbered_shared_credits(tmp_path: Path) -> None:
     fragment = tmp_path / "42.feature.md"
     fragment.write_text("Add a feature by [@alice](https://github.com/alice).\n")
 
-    add_pull_request_links(tmp_path, "tox-dev/example", {})
+    add_pull_request_links(
+        tmp_path,
+        "tox-dev/example",
+        {fragment.name: "Add a feature (#42)"},
+        {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+    )
 
-    assert fragment.read_text() == "Add a feature by [@alice](https://github.com/alice).\n"
+    assert fragment.read_text() == (
+        "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n"
+    )
 
 
-def test_add_pull_request_links_rejects_a_mismatched_author_without_partial_writes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("second_name", ["+second.feature.md", "43.feature.md"])
+def test_add_pull_request_links_rejects_a_mismatched_author_without_partial_writes(
+    tmp_path: Path, second_name: str
+) -> None:
     first = tmp_path / "+first.feature.md"
     first.write_text("Add a feature.\n")
-    second = tmp_path / "+second.feature.md"
+    second = tmp_path / second_name
     second.write_text("Fix a bug by [@bob](https://github.com/bob).\n")
 
     with pytest.raises(ValueError, match="pull request author @alice is missing"):

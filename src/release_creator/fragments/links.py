@@ -6,7 +6,7 @@ import re
 from typing import Final
 lazy from pathlib import Path
 
-from release_creator.fragments.names import pending_fragments
+from release_creator.fragments.names import fragment_number, pending_fragments
 from release_creator.fragments.pull_requests import PullRequestAuthor, pull_request_number, validate_repository
 
 _RE_PULL_REQUEST_LINK: Final = re.compile(
@@ -49,12 +49,11 @@ def add_pull_request_links(
     commit_subjects: dict[str, str],
     authors: dict[str, PullRequestAuthor] | None = None,
 ) -> None:
-    """Link each named fragment and add its verified author when available."""
+    """Link each fragment and add its verified author when available."""
     validate_repository(repository)
     updates: list[tuple[Path, str]] = [
         (fragment, _link_fragment(fragment, repository, commit_subjects, authors))
         for fragment in pending_fragments(directory)
-        if fragment.name.startswith("+")
     ]
     for fragment, content in updates:
         fragment.write_text(content, encoding="utf-8")
@@ -68,7 +67,8 @@ def _link_fragment(
 ) -> str:
     number = pull_request_number(commit_subjects.get(fragment.name, ""))
     content = fragment.read_text(encoding="utf-8").rstrip()
-    if _has_pull_request_link(content, repository, number):
+    linked = _has_pull_request_link(content, repository, number)
+    if fragment_number(fragment) is None and linked:
         msg = f"pull request already linked in {fragment}"
         raise ValueError(msg)
     if authors is not None and number not in authors:
@@ -83,9 +83,19 @@ def _link_fragment(
         if author is not None and not author.is_bot and author.handle not in handles:
             msg = f"pull request author @{author.handle} is missing from the explicit credit in {fragment}"
             raise ValueError(msg)
-        link = _pull_request_link(repository, number, fragment.suffix)
-        return f"{content[: match.start()]} {link} by {content[match.end() :]}\n"
+        if linked:
+            return f"{content}\n"
+        return (
+            f"{content[: match.start()]} {_pull_request_link(repository, number, fragment.suffix)} "
+            f"by {content[match.end() :]}\n"
+        )
     handle = author.handle if author is not None and not author.is_bot else None
+    if linked:
+        return (
+            f"{content.removesuffix('.')} by {_author_credit(handle, fragment.suffix)}.\n"
+            if handle is not None
+            else f"{content}\n"
+        )
     return _append_pull_request_link(content, repository, number, fragment.suffix, handle)
 
 
