@@ -45,32 +45,34 @@ jobs:
         with:
           python-version: "3.15"
           enable-cache: false
+      - name: Select previous release tag
+        id: previous
+        env:
+          TAG: ${{ github.ref_name }}
+        run: echo "tag=$(git tag --list | uv run --no-default-groups release-creator tags "$TAG" --previous)" >> "$GITHUB_OUTPUT"
       - name: Fetch contributor metadata
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          PREVIOUS: ${{ steps.previous.outputs.tag }}
         run: |
-          set -euo pipefail
-          previous=$(git tag --list | uv run --no-default-groups release-creator tags "$TAG" --previous)
-          args=(-f "tag_name=$TAG")
-          if [[ -n "$previous" ]]; then
-            args+=(-f "previous_tag_name=$previous")
+          if [[ -n "$PREVIOUS" ]]; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f "tag_name=$TAG" -f "previous_tag_name=$PREVIOUS" --jq .body >"$RUNNER_TEMP/generated-notes.md"
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f "tag_name=$TAG" --jq .body >"$RUNNER_TEMP/generated-notes.md"
           fi
-          gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq .body >"$RUNNER_TEMP/generated-notes.md"
       - name: Render release notes
         env:
           TAG: ${{ github.ref_name }}
+          PREVIOUS: ${{ steps.previous.outputs.tag }}
         run: |
-          set -euo pipefail
-          previous=$(git tag --list | uv run --no-default-groups release-creator tags "$TAG" --previous)
-          args=()
-          if [[ -n "$previous" ]]; then
-            args+=(--previous "$previous")
+          if [[ -n "$PREVIOUS" ]]; then
+            uv run --no-default-groups release-creator notes --changelog docs/changelog.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" --previous "$PREVIOUS" >"$RUNNER_TEMP/release-notes.md"
+          else
+            uv run --no-default-groups release-creator notes --changelog docs/changelog.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" >"$RUNNER_TEMP/release-notes.md"
           fi
-          uv run --no-default-groups release-creator notes --changelog docs/changelog.md --tag "$TAG" --repository "$GITHUB_REPOSITORY" --artifact-url "https://pypi.org/project/release-creator/${TAG}/" --generated-notes "$RUNNER_TEMP/generated-notes.md" "${args[@]}" >"$RUNNER_TEMP/release-notes.md"
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: |
-          gh release create "$TAG" --verify-tag --title "v$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+        run: gh release create "$TAG" --verify-tag --title "v$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
