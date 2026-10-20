@@ -349,7 +349,7 @@ def test_render_markdown_does_not_credit_bot_authors() -> None:
         pytest.param("https://github.com/tox-dev/example/pull/42", id="pull-url"),
     ],
 )
-def test_render_markdown_keeps_credited_new_contributors(reference: str) -> None:
+def test_render_markdown_keeps_human_new_contributors(reference: str) -> None:
     changelog = "## 1.2.3 (today)\n\n### Added\n\n- New option by [@alice](https://github.com/alice).\n"
     generated = dedent(f"""\
         <!-- Release notes generated using configuration in .github/release.yml at main -->
@@ -358,7 +358,7 @@ def test_render_markdown_keeps_credited_new_contributors(reference: str) -> None
         ## New Contributors
         * @alice made their first contribution in {reference}
         * @dependabot[bot] made their first contribution in #43
-        * @uncredited made their first contribution in #44
+        * @bob made their first contribution in #44
         **Full Changelog**: unrelated
         """)
 
@@ -367,7 +367,8 @@ def test_render_markdown_keeps_credited_new_contributors(reference: str) -> None
     assert result == (
         "### Features\n\n- New option by @alice.\n\n"
         '<a name="release-1-2-3-new-contributors"></a>\n\n'
-        "### New Contributors\n\n- @alice made their first contribution in #42\n\n"
+        "### New Contributors\n\n- @alice made their first contribution in #42\n"
+        "- @bob made their first contribution in #44\n\n"
         "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
     )
 
@@ -376,12 +377,24 @@ def test_render_markdown_keeps_credited_new_contributors(reference: str) -> None
     "generated",
     [
         pytest.param("## What's Changed\n* One change\n", id="no-section"),
-        pytest.param("## New Contributors\n* @uncredited made their first contribution in #4\n", id="no-credit"),
+        pytest.param("## New Contributors\n* @dependabot[bot] made their first contribution in #4\n", id="bot"),
     ],
 )
 def test_render_markdown_omits_unverified_contributors(generated: str) -> None:
     result = render_markdown("## 1.2.3 (today)\n", ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
     assert result == "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+
+
+def test_render_markdown_keeps_first_contributor_without_news_entry() -> None:
+    generated = "## New Contributors\n* @alice made their first contribution in #42\n"
+
+    result = render_markdown("## 1.2.3 (today)\n", ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert result == (
+        '<a name="release-1-2-3-new-contributors"></a>\n\n'
+        "### New Contributors\n\n- @alice made their first contribution in #42\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
 
 
 def test_render_rst_maps_categories_and_credits() -> None:

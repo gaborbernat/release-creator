@@ -112,9 +112,9 @@ GitHub's generated notes may identify first-time contributors. Save its body and
      --changelog docs/changelog.md --tag 1.2.3 --repository owner/project \
      --generated-notes generated-notes.md > release-notes.md
 
-Only generated ``New Contributors`` lines for handles already credited in the tagged changelog are kept. Generated
-change lists and the ``<!-- Release notes generated ... -->`` banner are discarded. This input never decides which
-changes or authors belong in the release.
+Human ``New Contributors`` lines remain even when their PR did not need a changelog entry. Generated change lists and
+the ``<!-- Release notes generated ... -->`` banner are discarded. This input never decides which changes or changelog
+authors belong in the release.
 
 reStructuredText changelogs
 ===========================

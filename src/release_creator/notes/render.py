@@ -156,7 +156,7 @@ def render_rst(
 def _finish(notes: str, context: ReleaseContext, generated_notes: str | None) -> str:
     if generated_notes is not None:
         _verify_authors(notes, generated_notes, context)
-        if contributors := _new_contributors(notes, generated_notes, context.tag):
+        if contributors := _new_contributors(generated_notes, context.tag):
             notes = f"{notes}\n\n{contributors}" if notes else contributors
     if context.artifact_url is not None:
         link = f"[{context.artifact_label}]({context.artifact_url})"
@@ -219,7 +219,7 @@ def _release_entries(notes: str, repository: str) -> dict[str, list[set[str]]]:
     return entries
 
 
-def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
+def _new_contributors(generated_notes: str, tag: str) -> str:
     if (
         section := re.search(
             r"""
@@ -232,16 +232,6 @@ def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
         )
     ) is None:
         return ""
-    credited = {
-        match["handle"]
-        for match in re.finditer(
-            r"""
-            @(?P<handle>[A-Za-z0-9-]+)  # Credited GitHub handle
-            """,
-            notes,
-            re.VERBOSE,
-        )
-    }
     entries = [
         f"- @{match['handle']} made their first contribution in #{match['number']}"
         for line in section["entries"].splitlines()
@@ -260,7 +250,6 @@ def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
                 re.VERBOSE,
             )
         )
-        and match["handle"] in credited
     ]
     if not entries:
         return ""
