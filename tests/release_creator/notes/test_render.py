@@ -287,6 +287,30 @@ def test_render_markdown_cross_checks_pull_request_authors() -> None:
 
 
 @pytest.mark.parametrize(
+    "generated",
+    [
+        pytest.param("* Another change\n", id="omitted-pull-request"),
+        pytest.param(
+            "* Another change by @bob in https://github.com/tox-dev/other/pull/42\n",
+            id="same-number-in-another-repository",
+        ),
+    ],
+)
+def test_render_markdown_uses_source_credit_when_generated_notes_omit_pull_request(generated: str) -> None:
+    changelog = dedent("""\
+        ## 1.2.3 (today)
+
+        ### Added
+
+        - Add Python support ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).
+        """)
+
+    result = render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert "- Add Python support ([#42](https://github.com/tox-dev/example/pull/42)) by @alice." in result
+
+
+@pytest.mark.parametrize(
     ("changelog", "generated", "message"),
     [
         pytest.param(
@@ -296,15 +320,21 @@ def test_render_markdown_cross_checks_pull_request_authors() -> None:
             id="missing-changelog-credit",
         ),
         pytest.param(
-            "## 1.2.3 (today)\n\n### Added\n\n- Add a feature "
-            "([#42](https://github.com/tox-dev/example/pull/42)) by @alice.\n",
+            "## 1.2.3 (today)\n\n### Added\n\n- Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
             "* Add a feature\n",
             "no author for pull request #42",
             id="missing-generated-author",
         ),
         pytest.param(
-            "## 1.2.3 (today)\n\n### Added\n\n- Add a feature "
-            "([#42](https://github.com/tox-dev/example/pull/42)) by @alice.\n",
+            "## 1.2.3 (today)\n\n### Added\n\n"
+            "- Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by @alice.\n"
+            "- Add another feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            "* Another change\n",
+            "no author for pull request #42",
+            id="missing-credit-on-second-entry",
+        ),
+        pytest.param(
+            "## 1.2.3 (today)\n\n### Added\n\n- Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
             "* Add a feature by @alice in https://github.com/tox-dev/other/pull/42\n",
             "no author for pull request #42",
             id="different-repository",

@@ -115,6 +115,7 @@ GitHub's generated notes may identify first-time contributors. Save its body and
 Human ``New Contributors`` lines remain even when their PR did not need a changelog entry. Generated change lists and
 the ``<!-- Release notes generated ... -->`` banner are discarded. This input never decides which changes or changelog
 authors belong in the release.
+If GitHub omits a referenced PR from its generated notes, the tagged changelog entry must already credit its author.
 
 reStructuredText changelogs
 ===========================

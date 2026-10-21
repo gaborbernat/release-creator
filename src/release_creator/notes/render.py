@@ -173,8 +173,10 @@ def _verify_authors(notes: str, generated_notes: str, context: ReleaseContext) -
     generated_authors, generated_bots = _generated_pr_authors(generated_notes, context.repository)
     for number, entries in _release_entries(notes, context.repository).items():
         if number not in generated_authors:
-            msg = f"generated notes have no author for pull request #{number}"
-            raise ValueError(msg)
+            if any(not handles for handles in entries):
+                msg = f"generated notes have no author for pull request #{number}"
+                raise ValueError(msg)
+            continue
         if (bot := generated_bots.get(number)) is not None and any(bot in handles for handles in entries):
             msg = f"changelog credit for pull request #{number} must not name bot @{bot}"
             raise ValueError(msg)

@@ -47,7 +47,8 @@ credits. ``notes`` changes the presentation for GitHub, including unwrapped bull
 comparison links. It does not build a change list from commit subjects.
 
 GitHub's generated notes can identify first-time contributors. When supplied, ``notes`` keeps human ``New Contributors``
-lines even when their PR did not need a changelog entry. It discards GitHub's generated change list and banner. It also
-checks that each referenced PR has a matching author credit. The fragment linker adds the merged PR author and checks
-explicit shared credits against that author. A bot pull request has no news entry unless it supplies a fragment for a
-user-visible change, and the bot is never credited as an author.
+lines even when their PR did not need a changelog entry. It discards GitHub's generated change list and banner. For a
+PR listed by GitHub, it checks the author against the changelog credit. GitHub can omit a PR from generated notes for
+an older tag; that entry must carry a credit in the tagged changelog. The fragment linker adds the merged PR author
+and checks explicit shared credits against that author. A bot pull request has no news entry unless it supplies a
+fragment for a user-visible change, and the bot is never credited as an author.
