@@ -40,6 +40,17 @@ automatic author credit, even when that PR supplies a user-visible fragment.
 Rules and failure cases
 =======================
 
+Before merge, check the changed fragments against the Towncrier configuration:
+
+.. code-block:: bash
+
+   release-creator validate-news --base main
+
+The command prints the number of added or modified fragments. It reads ``pyproject.toml`` by default; use
+``--config`` for another path. It rejects unknown categories, unsupported names, and empty fragments. It does not
+change files or decide whether a pull request needs news; the caller uses the count together with the ``skip news``
+label and the PR author to make that decision.
+
 Write one fragment per user-visible change, including multiple changes in one pull request. Maintenance work without
 a user-visible change needs no fragment. A bot pull request needs a fragment only when that pull request supplies one.
 The command does not decide whether a change is newsworthy; review that before merging.
