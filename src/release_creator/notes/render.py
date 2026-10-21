@@ -56,7 +56,7 @@ _RE_RST_VERSION: Final = re.compile(
         (?P<tag>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?)\ \((?P<date>[^)]+)\)  # Version and date
         |
         `(?P<link_tag>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?)\ <https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/
-        (?P=link_tag)>`_\ -\ (?P<link_date>\d{4}-\d{2}-\d{2})  # Linked version with date
+        (?P=link_tag)>`_(?:\ -\ (?P<link_date>\d{4}-\d{2}-\d{2}))?  # Linked version, with optional date
     )$
     """,
     re.VERBOSE,

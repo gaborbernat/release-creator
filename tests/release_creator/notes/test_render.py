@@ -543,6 +543,34 @@ def test_render_rst_accepts_historical_version_shapes(tag: str) -> None:
     )
 
 
+def test_render_rst_accepts_undated_linked_four_part_heading() -> None:
+    changelog = dedent("""\
+        `0.12.1.0 <https://github.com/tox-dev/example/tree/0.12.1.0>`_
+        ===============================================================
+
+        Fixed
+        -----
+
+        - Correct the current release.
+
+        `0.12.0.4 <https://github.com/tox-dev/example/tree/0.12.0.4>`_
+        ===============================================================
+
+        Added
+        -----
+
+        - Add an earlier feature.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="0.12.1.0", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-0-12-1-0-fixed"></a>\n\n'
+        "### Bug fixes\n\n- Correct the current release.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/0.12.1.0\n"
+    )
+
+
 def test_render_rst_accepts_linked_prerelease_heading() -> None:
     changelog = dedent("""\
         `v2.0.0a1 <https://github.com/tox-dev/example/tree/v2.0.0a1>`_ - 2021-05-13
