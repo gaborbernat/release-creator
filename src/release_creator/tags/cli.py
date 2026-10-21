@@ -12,7 +12,7 @@ lazy from release_creator.tags.select import next_tag, parse_tag, previous_tag, 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register numeric tag validation and predecessor selection."""
     tags = commands.add_parser("tags", help="calculate, validate, or compare numeric release tags")
-    tags.add_argument("tag", nargs="?", help="major.minor.patch release tag")
+    tags.add_argument("tag", nargs="?", help="major.minor.patch release tag, optionally prefixed with v")
     choice = tags.add_mutually_exclusive_group()
     choice.add_argument(
         "--next",
@@ -21,6 +21,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )
     choice.add_argument("--previous", action="store_true", help="print the preceding tag from standard input")
     choice.add_argument("--require-newer", action="store_true", help="require a tag newer than those on standard input")
+    tags.add_argument("--prefix", choices=("v",), default="", help="prefix the calculated tag with v")
     tags.add_argument(
         "--directory", type=Path, default=Path("changelog.d"), help="pending fragment directory for --next"
     )
@@ -37,6 +38,7 @@ def _select(args: argparse.Namespace) -> None:
             sys.stdin.read().splitlines(),
             [path.name for path in pending_fragments(args.directory)],
             datetime.now(UTC).date(),
+            args.prefix,
         )
         sys.stdout.write(f"{version}\n")
         return

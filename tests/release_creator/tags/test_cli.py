@@ -42,6 +42,22 @@ def test_tags_next_accepts_numbered_fragment(
     assert capsys.readouterr().out == "0.2.0\n"
 
 
+def test_tags_next_with_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "+one.feature.md").write_text("Add a feature.\n")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["release-creator", "tags", "--next", "auto", "--prefix", "v", "--directory", str(tmp_path)],
+    )
+    monkeypatch.setattr(sys, "stdin", StringIO("1.0.3\nv1.1.0\nv1\n"))
+
+    main()
+
+    assert capsys.readouterr().out == "v1.2.0\n"
+
+
 @pytest.mark.parametrize(
     "filename",
     [

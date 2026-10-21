@@ -19,6 +19,13 @@ An ``*.breaking.md`` fragment requests a major bump. Otherwise, an ``*.feature.m
 other fragments request a patch bump. If several kinds are present, the largest bump wins. From ``1.2.3``, a feature
 produces ``1.3.0`` and a bug fix alone produces ``1.2.4``. With no numeric tags, a feature produces ``0.1.0``.
 
+For repositories with ``v``-prefixed release tags, add ``--prefix v``. Existing ``v1.2.3`` and ``1.2.3`` tags both
+count when selecting the next version; the option controls the new tag's spelling:
+
+.. code-block:: bash
+
+   git tag --list | uvx --from release-creator release-creator tags --next auto --prefix v
+
 For tox-dev libraries, both adding and dropping a supported Python version use a ``feature`` fragment, such as
 ``+drop-python-3-9.feature.md``. The note appears under Added and automatic version selection makes a minor release.
 New releases will not install on a dropped Python version. Users who need that version can install an older release.
@@ -38,7 +45,7 @@ Suppose ``git tag --list`` prints ``1.2.1``, ``1.2.2``, and ``docs-preview``. Be
 
    git tag --list | uvx --from release-creator release-creator tags 1.2.3 --require-newer
 
-A successful check prints nothing and exits with status zero. If ``1.2.3`` or a newer numeric tag already exists,
+A successful check prints nothing and exits with status zero. If ``1.2.3``, ``v1.2.3``, or a newer numeric tag already exists,
 the command fails. This prevents release preparation from reusing a version or publishing an older one. A name such
 as ``1.2.3rc1`` also fails: this command accepts exactly three numeric components.
 
@@ -57,10 +64,10 @@ numeric release, ``--previous`` prints nothing; ``notes`` then links to the comm
 Rules and failure cases
 =======================
 
-The proposed tag must have three numeric components, ``major.minor.patch`` or ``year.month.patch``. Existing tags
-with other forms, such as ``docs-preview`` or ``v1.2.2``, do not take part in the comparison. Numeric components
-are compared as numbers, so ``1.2.10`` follows ``1.2.9``. ``--previous`` selects the greatest numeric tag below
-the proposed one, regardless of input order.
+The proposed tag must have three numeric components, ``major.minor.patch`` or ``year.month.patch``, with an optional
+``v`` prefix. Existing tags with other forms, such as ``docs-preview`` or a floating ``v1`` tag, do not take part in
+the comparison. Numeric components are compared as numbers, so ``v1.2.10`` follows ``1.2.9``. ``--previous`` selects
+the greatest numeric tag below the proposed one, retains its prefix, and ignores input order.
 
 Without ``--previous`` or ``--require-newer``, the command only validates the proposed tag's format and does not read
 standard input. Choose one option at a time; they answer different questions.

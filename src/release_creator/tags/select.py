@@ -8,11 +8,11 @@ if TYPE_CHECKING:
     from datetime import date
 
 
-def next_tag(bump: str, tags: list[str], fragments: list[str], release_date: date) -> str:
+def next_tag(bump: str, tags: list[str], fragments: list[str], release_date: date, prefix: str = "") -> str:
     """Choose a release version from existing tags and pending fragments.
 
     Returns:
-        The next major.minor.patch or year.month.patch version.
+        The next major.minor.patch or year.month.patch version, with the requested prefix.
 
     Raises:
         ValueError: The bump is unknown, no fragments exist, or the result is not newer.
@@ -52,11 +52,11 @@ def next_tag(bump: str, tags: list[str], fragments: list[str], release_date: dat
     if version <= current:
         msg = f"calculated version must be newer than {'.'.join(map(str, current))}"
         raise ValueError(msg)
-    return ".".join(map(str, version))
+    return prefix + ".".join(map(str, version))
 
 
 def parse_tag(tag: str) -> tuple[int, int, int]:
-    """Parse a major.minor.patch release tag.
+    """Parse a major.minor.patch release tag with an optional v prefix.
 
     Returns:
         The numeric major, minor, and patch components.
@@ -65,11 +65,11 @@ def parse_tag(tag: str) -> tuple[int, int, int]:
         ValueError: The tag is not a numeric release version.
 
     """
-    match tag.split("."):
+    match tag.removeprefix("v").split("."):
         case [major, minor, patch] if all(part.isascii() and part.isdecimal() for part in (major, minor, patch)):
             return int(major), int(minor), int(patch)
         case _:
-            msg = f"expected a major.minor.patch version: {tag}"
+            msg = f"expected a major.minor.patch version with optional v prefix: {tag}"
             raise ValueError(msg)
 
 
