@@ -2,6 +2,89 @@
 
 <!-- towncrier release notes start -->
 
+<a name="release-0-5-0"></a>
+
+## 0.5.0 (2026-10-22)
+
+<a name="release-0-5-0-added"></a>
+
+### Added
+
+- Add a `hooks` command to refresh exact pre-commit `additional_dependencies` pins under a release-age cutoff without
+  rewriting the rest of the hook configuration ([#11](https://github.com/tox-dev/release-creator/pull/11)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+- Allow repositories whose numeric Towncrier fragment stems are pull request numbers to preserve the original pull
+  request link and verified author during historical backfills
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Calculate versions from `v`-prefixed release tags and retain that prefix when requested
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Check PyPI filenames and SHA256 digests before retrying a partial upload, stage only missing files, and verify the
+  complete published set afterward ([#11](https://github.com/tox-dev/release-creator/pull/11)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+- Check a JetBrains Marketplace plugin against its signed ZIP before retrying an upload
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Export one selectable pylock.toml for a project's runtime dependencies, groups, extras, Python range, and platforms
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Include YAML support in the base package so every command works without an extra
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Include build backend dependencies in the full project lock and select exact, hashed build constraints for the current
+  Python and platform ([#11](https://github.com/tox-dev/release-creator/pull/11)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+- Link Knope changesets to merged pull requests and repair changelog anchors after release preparation
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Render package and Knope draft fragments beside released history in documentation builds without changing the tracked
+  changelog ([#11](https://github.com/tox-dev/release-creator/pull/11)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+- Select and validate package-prefixed tags from a mixed repository tag list
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Select hashed build constraints for named operating systems and Python versions, and reject a shared file when their
+  dependency selections differ ([#11](https://github.com/tox-dev/release-creator/pull/11)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+- Validate changed pull request fragments with the Towncrier configuration
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+
+<a name="release-0-5-0-fixed"></a>
+
+### Fixed
+
+- Convert Sphinx PEP references to links in GitHub Release notes rendered from reStructuredText changelogs
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Convert reStructuredText links in changelog entries to Markdown links in GitHub Release notes
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Credit the merged pull request author for numeric fragments without losing a separate issue link
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Keep GitHub first-contributor credits for human pull requests without a changelog entry
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Keep explicit display text from reStructuredText links in GitHub Release notes
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Keep first-time human contributor credits when GitHub generated notes use a level-three heading
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Keep wrapped reStructuredText author credits attached to their release entry
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Preserve RST field names inside inline code when rendering GitHub release notes
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Preserve each reStructuredText changelog’s configured category heading level when assembling a release
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Preserve named historical author credits when GitHub generated notes omit a deleted account's handle
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Preserve nested lists, code blocks, and warnings when rendering reStructuredText release notes for GitHub
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Reject named changelog fragments without a `+` prefix before version selection or release assembly
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Render a credited historical pull request when GitHub generated notes omit it
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Render historical RST release headings that link to a tag but have no date
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+- Render prerelease and four-part historical version sections in GitHub Release notes
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+
+<a name="release-0-5-0-documentation"></a>
+
+### Documentation
+
+- Clarify when to keep `uv.lock` alongside the exported `pylock.toml`
+  ([#11](https://github.com/tox-dev/release-creator/pull/11)) by [@gaborbernat](https://github.com/gaborbernat).
+
 <a name="release-0-4-1"></a>
 
 ## 0.4.1 (2026-10-19)
