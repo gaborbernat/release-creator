@@ -2,6 +2,17 @@
 
 <!-- towncrier release notes start -->
 
+<a name="release-0-5-1"></a>
+
+## 0.5.1 (2026-10-22)
+
+<a name="release-0-5-1-fixed"></a>
+
+### Fixed
+
+- Refresh transitive pre-commit hook dependencies alongside direct pins, including platform-specific packages
+  ([#13](https://github.com/tox-dev/release-creator/pull/13)) by [@gaborbernat](https://github.com/gaborbernat).
+
 <a name="release-0-5-0"></a>
 
 ## 0.5.0 (2026-10-22)
