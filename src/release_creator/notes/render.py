@@ -4,23 +4,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from textwrap import dedent
 from typing import Final
 
 lazy import mdformat
 
-_CATEGORIES: Final = {
-    "Added": "Features",
-    "Changes": "Changes",
-    "Fixed": "Bug fixes",
-    "Documentation": "Documentation",
-    "Breaking changes": "Breaking changes",
-    "Security": "Security",
-    "Performance": "Performance",
-    "Deprecated": "Deprecations",
-    "Removed": "Removals",
-    "Packaging": "Packaging",
-    "Other changes": "Other changes",
-}
+from release_creator.categories import RELEASE_CATEGORIES
+from release_creator.github import MARKDOWN_AUTHOR, validate_repository
+
 _RE_RELEASE_PULL: Final = re.compile(
     r"""
     https://github\.com/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+)  # PR link
@@ -53,10 +44,10 @@ _RE_GENERATED_PR_AUTHOR: Final = re.compile(
 _RE_RST_VERSION: Final = re.compile(
     r"""
     ^(?:
-        v?(?P<tag>\d+\.\d+(?:\.\d+)?)\ \((?P<date>[^)]+)\)  # Plain version with parenthesized date
+        (?P<tag>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?)\ \((?P<date>[^)]+)\)  # Version and date
         |
-        `(?P<link_tag>\d+\.\d+(?:\.\d+)?)\ <https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/
-        (?P=link_tag)>`_\ -\ (?P<link_date>\d{4}-\d{2}-\d{2})  # Linked version with date
+        `(?P<link_tag>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?)\ <https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/
+        (?P=link_tag)>`_(?:\ -\ (?P<link_date>\d{4}-\d{2}-\d{2}))?  # Linked version, with optional date
     )$
     """,
     re.VERBOSE,
@@ -71,7 +62,7 @@ _RE_MARKDOWN_VERSION: Final = re.compile(
     r"""
     ^(?P<level>\#{2,3})\          # Markdown version heading level
     (?P<open>\[)?                   # Optional Keep a Changelog link bracket
-    (?P<tag>v?\d+\.\d+(?:\.\d+)?)  # Release tag with optional patch component
+    (?P<tag>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?)  # Release version, including historical prereleases
     (?(open)\])                     # Close the optional bracket
     (?:\ \([^)]+\)|\ -\ [^\n]+)? # Parenthesized or dash-separated date
     $                               # End of heading
@@ -81,21 +72,14 @@ _RE_MARKDOWN_VERSION: Final = re.compile(
 _RE_MARKDOWN_VERSION_ANCHOR: Final = re.compile(
     r"""
     ^<a\ name="release-             # Version anchor prefix
-    (?P<version>v?\d+(?:-\d+){1,2})  # Dotted version encoded for an anchor
+    (?P<version>v?\d+(?:-\d+){1,3}(?:(?:a|b|rc)\d*)?)  # Version encoded for an anchor
     "></a>$                         # Anchor terminator
-    """,
-    re.VERBOSE,
-)
-_RE_MARKDOWN_AUTHOR: Final = re.compile(
-    r"""
-    \[@(?P<handle>[A-Za-z0-9-]+)\]  # GitHub handle in link text
-    \(https://github\.com/(?P=handle)\)  # Matching profile URL
     """,
     re.VERBOSE,
 )
 _RE_MARKDOWN_LINK_DEFINITION: Final = re.compile(
     r"""
-    ^\[(?P<version>v?\d+\.\d+(?:\.\d+)?|unreleased)\]:  # Version comparison reference
+    ^\[(?P<version>v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d*)?|unreleased)\]:  # Version reference
     \s+https://github\.com/[^\s]+                    # GitHub destination
     $                                                   # End of definition
     """,
@@ -118,9 +102,10 @@ class ReleaseContext:
 def render_markdown(changelog: str, context: ReleaseContext, generated_notes: str | None = None) -> str:
     """Render one Markdown release section for GitHub without wrapped list items.
 
-    Returns:
-        The complete GitHub Release body.
-
+    :param changelog: Tagged Markdown changelog.
+    :param context: Repository and release links.
+    :param generated_notes: GitHub-generated text used only for verified contributor credits.
+    :returns: The complete GitHub Release body.
 
     """
     _validate_context(context)
@@ -133,12 +118,12 @@ def render_rst(
 ) -> str:
     """Render one reStructuredText release section for GitHub.
 
-    Returns:
-        The complete GitHub Release body.
-
-    Raises:
-        ValueError: The issue role must name a GitHub issue or pull request.
-
+    :param changelog: Tagged reStructuredText changelog.
+    :param context: Repository and release links.
+    :param issue_role: Whether issue roles link to issues or pull requests.
+    :param generated_notes: GitHub-generated text used only for verified contributor credits.
+    :returns: The complete GitHub Release body.
+    :raises ValueError: The issue role must name a GitHub issue or pull request.
     """
     _validate_context(context)
     if context.package is not None:
@@ -156,7 +141,7 @@ def render_rst(
 def _finish(notes: str, context: ReleaseContext, generated_notes: str | None) -> str:
     if generated_notes is not None:
         _verify_authors(notes, generated_notes, context)
-        if contributors := _new_contributors(notes, generated_notes, context.tag):
+        if contributors := _new_contributors(generated_notes, context):
             notes = f"{notes}\n\n{contributors}" if notes else contributors
     if context.artifact_url is not None:
         link = f"[{context.artifact_label}]({context.artifact_url})"
@@ -173,12 +158,17 @@ def _verify_authors(notes: str, generated_notes: str, context: ReleaseContext) -
     generated_authors, generated_bots = _generated_pr_authors(generated_notes, context.repository)
     for number, entries in _release_entries(notes, context.repository).items():
         if number not in generated_authors:
-            msg = f"generated notes have no author for pull request #{number}"
-            raise ValueError(msg)
-        if (bot := generated_bots.get(number)) is not None and any(bot in handles for handles in entries):
+            if any(not handles for handles, _ in entries):
+                msg = f"generated notes have no author for pull request #{number}"
+                raise ValueError(msg)
+            continue
+        if (bot := generated_bots.get(number)) is not None and any(bot in handles for handles, _ in entries):
             msg = f"changelog credit for pull request #{number} must not name bot @{bot}"
             raise ValueError(msg)
-        if (author := generated_authors[number]) is not None and any(author not in handles for handles in entries):
+        if bot is None and generated_authors[number] is None and any(not attributed for _, attributed in entries):
+            msg = f"changelog has no credit for pull request #{number} with an unavailable author"
+            raise ValueError(msg)
+        if (author := generated_authors[number]) is not None and any(author not in handles for handles, _ in entries):
             msg = f"changelog credit for pull request #{number} does not include @{author}"
             raise ValueError(msg)
 
@@ -186,22 +176,31 @@ def _verify_authors(notes: str, generated_notes: str, context: ReleaseContext) -
 def _generated_pr_authors(generated_notes: str, repository: str) -> tuple[dict[str, str | None], dict[str, str]]:
     authors: dict[str, str | None] = {}
     bots: dict[str, str] = {}
+    in_new_contributors = False
     for line in generated_notes.splitlines():
-        if (match := _RE_GENERATED_PR_AUTHOR.search(line)) is None or match["repository"] != repository:
+        if line.startswith(("## ", "### ")):
+            in_new_contributors = line.removeprefix("### ").removeprefix("## ") == "New Contributors"
+        if in_new_contributors:
             continue
-        number = match["number"]
-        author = None if match["bot"] is not None else match["handle"]
-        if match["bot"] is not None:
-            bots[number] = match["handle"]
-        if number in authors and authors[number] != author:
-            msg = f"conflicting generated authors for pull request #{number}"
-            raise ValueError(msg)
-        authors[number] = author
+        match = _RE_GENERATED_PR_AUTHOR.search(line)
+        if match is not None and match["repository"] != repository:
+            match = None
+        for link in _RE_RELEASE_PULL.finditer(line):
+            if link["repository"] != repository:
+                continue
+            number = link["number"]
+            author = None if match is None or match["bot"] is not None else match["handle"]
+            if match is not None and match["bot"] is not None:
+                bots[number] = match["handle"]
+            if number in authors and authors[number] != author:
+                msg = f"conflicting generated authors for pull request #{number}"
+                raise ValueError(msg)
+            authors[number] = author
     return authors, bots
 
 
-def _release_entries(notes: str, repository: str) -> dict[str, list[set[str]]]:
-    entries: dict[str, list[set[str]]] = {}
+def _release_entries(notes: str, repository: str) -> dict[str, list[tuple[set[str], bool]]]:
+    entries: dict[str, list[tuple[set[str], bool]]] = {}
     for line in notes.splitlines():
         pull_requests = [
             match["number"] for match in _RE_RELEASE_PULL.finditer(line) if match["repository"] == repository
@@ -215,35 +214,28 @@ def _release_entries(notes: str, repository: str) -> dict[str, list[set[str]]]:
             else set()
         )
         for number in pull_requests:
-            entries.setdefault(number, []).append(handles)
+            entries.setdefault(number, []).append((
+                handles,
+                credit_text is not None and bool(credit_text["credits"].strip(" .,;")),
+            ))
     return entries
 
 
-def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
+def _new_contributors(generated_notes: str, context: ReleaseContext) -> str:
     if (
         section := re.search(
             r"""
-            ^\#\#\ New\ Contributors\s*\n  # Generated contributor heading
-            (?P<entries>.*?)            # Lines until the next heading
-            (?=^\#\#\ |\Z)              # Next section or end of body
+            ^\#{2,3}\ New\ Contributors\s*\n  # GitHub uses H2 or H3 for this section
+            (?P<entries>.*?)               # Contributor bullets
+            (?=^\#{1,6}\ |\Z)              # Next heading or end of body
             """,
             generated_notes,
             re.MULTILINE | re.DOTALL | re.VERBOSE,
         )
     ) is None:
         return ""
-    credited = {
-        match["handle"]
-        for match in re.finditer(
-            r"""
-            @(?P<handle>[A-Za-z0-9-]+)  # Credited GitHub handle
-            """,
-            notes,
-            re.VERBOSE,
-        )
-    }
     entries = [
-        f"- @{match['handle']} made their first contribution in #{match['number']}"
+        f"- @{match['handle']} made their first contribution in {_contributor_reference(match, context.repository)}"
         for line in section["entries"].splitlines()
         if (
             match := re.fullmatch(
@@ -260,12 +252,16 @@ def _new_contributors(notes: str, generated_notes: str, tag: str) -> str:
                 re.VERBOSE,
             )
         )
-        and match["handle"] in credited
     ]
     if not entries:
         return ""
-    anchor = f"release-{tag.replace('.', '-').replace('/', '-')}-new-contributors"
-    return f'<a name="{anchor}"></a>\n\n### New Contributors\n\n' + "\n".join(entries)
+    anchor = f"release-{context.tag.replace('.', '-').replace('/', '-')}-new-contributors"
+    return f'<a name="{anchor}"></a>\n\n### New Contributors\n\n{"\n".join(entries)}'
+
+
+def _contributor_reference(match: re.Match[str], repository: str) -> str:
+    prefix = match["reference"] if match["reference"] != "#" else f"https://github.com/{repository}/pull/"
+    return f"[#{match['number']}]({prefix}{match['number']})"
 
 
 def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) -> str:
@@ -274,7 +270,7 @@ def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) 
         index
         for index, line in enumerate(lines)
         if (match := _RE_RST_VERSION.fullmatch(line.strip()))
-        and (match["tag"] or match["link_tag"]) == context.tag.removeprefix("v")
+        and (match["tag"] or match["link_tag"]).removeprefix("v") == context.tag.removeprefix("v")
     ]
     if len(headings) != 1:
         msg = f"expected one changelog section for {context.tag}, found {len(headings)}"
@@ -283,37 +279,104 @@ def _extract_rst_body(changelog: str, context: ReleaseContext, issue_role: str) 
         (index for index in range(headings[0] + 1, len(lines)) if _RE_RST_VERSION.fullmatch(lines[index].strip())),
         len(lines),
     )
-    sections: dict[str, list[str]] = {}
-    category: str | None = None
-    index = headings[0] + 1
-    while index < end:
-        line = lines[index].strip()
-        if line and index + 1 < end and _RE_RST_HEADING_UNDERLINE.fullmatch(lines[index + 1].strip()):
-            category = _require_category(line)
-            sections.setdefault(category, [])
-            index += 2
-            continue
-        if line.startswith("- "):
-            if category is None:
-                msg = f"release item outside a category: {line}"
-                raise ValueError(msg)
-            sections[category].append(_convert_rst(line, context.repository, issue_role))
-        elif line and _RE_RST_HEADING_UNDERLINE.fullmatch(line) is None and not line.startswith(".. _"):
-            if category is None or not sections[category]:
-                msg = f"unexpected release text: {line}"
-                raise ValueError(msg)
-            sections[category][-1] += f" {_convert_rst(line, context.repository, issue_role)}"
-        index += 1
     body: list[str] = []
-    for name, entries in sections.items():
+    for block in _parse_rst_blocks(lines, headings[0] + 1, end, context.repository, issue_role):
+        if isinstance(block, str):
+            body.extend((block, ""))
+            continue
+        name, entries = block
         if entries:
             anchor = f"release-{context.tag.replace('.', '-')}-{name.lower().replace(' ', '-')}"
-            body.extend((f'<a name="{anchor}"></a>', "", f"### {_CATEGORIES[name]}", "", *entries, ""))
+            body.extend((
+                f'<a name="{anchor}"></a>',
+                "",
+                f"### {RELEASE_CATEGORIES[name]}",
+                "",
+                *(_convert_rst(entry, context.repository, issue_role) for entry in entries),
+                "",
+            ))
     return "\n".join(body).strip()
 
 
+def _parse_rst_blocks(
+    lines: list[str], start: int, end: int, repository: str, issue_role: str
+) -> list[tuple[str, list[str]] | str]:
+    blocks: list[tuple[str, list[str]] | str] = []
+    entries: list[str] | None = None
+    after_block = False
+    nested = False
+    index = start
+    while index < end:
+        line = lines[index].strip()
+        if line and index + 1 < end and _RE_RST_HEADING_UNDERLINE.fullmatch(lines[index + 1].strip()):
+            entries = []
+            blocks.append((_require_category(line), entries))
+            after_block = False
+            nested = False
+            index += 2
+            continue
+        if line.startswith(".. code-block:: "):
+            if entries is None or not entries or lines[index].startswith(".."):
+                msg = f"code block outside a release item: {line}"
+                raise ValueError(msg)
+            content, index = _rst_directive_content(lines, index, end)
+            language = line.removeprefix(".. code-block:: ")
+            entries[-1] += f"\n\n  ```{language}\n{'\n'.join(f'  {part}' for part in content.splitlines())}\n  ```"
+            after_block = True
+            nested = False
+            continue
+        if line == ".. warning::" and lines[index].startswith(".."):
+            content, index = _rst_directive_content(lines, index, end)
+            blocks.append(f"> **Warning:** {_convert_rst(' '.join(content.splitlines()), repository, issue_role)}")
+            entries = None
+            continue
+        after_block, nested = _append_rst_entry(entries, lines[index], after_block=after_block, nested=nested)
+        index += 1
+    return blocks
+
+
+def _append_rst_entry(entries: list[str] | None, raw: str, *, after_block: bool, nested: bool) -> tuple[bool, bool]:
+    line = raw.strip()
+    if raw.startswith("- "):
+        if entries is None:
+            msg = f"release item outside a category: {line}"
+            raise ValueError(msg)
+        entries.append(line)
+        return False, False
+    if line.startswith("- "):
+        if entries is None or not entries:
+            msg = f"release item outside a category: {line}"
+            raise ValueError(msg)
+        if line.startswith("- by "):
+            credit = line.removeprefix("- ")
+            entries[-1] += f"\n\n  {credit}" if nested or after_block else f" {credit}"
+            return False, False
+        entries[-1] += f"\n  {line}"
+        return False, True
+    if line and _RE_RST_HEADING_UNDERLINE.fullmatch(line) is None and not line.startswith(".. _"):
+        if entries is None or not entries or line.startswith(".. "):
+            msg = f"unexpected release text: {line}"
+            raise ValueError(msg)
+        entries[-1] += f"\n\n  {line}" if after_block else f" {line}"
+        return False, False if after_block else nested
+    return after_block or (nested and not line), nested
+
+
+def _rst_directive_content(lines: list[str], index: int, end: int) -> tuple[str, int]:
+    indent = len(lines[index]) - len(lines[index].lstrip())
+    start = index + 1
+    index = start
+    while index < end and (not lines[index].strip() or len(lines[index]) - len(lines[index].lstrip()) > indent):
+        index += 1
+    content = dedent("\n".join(lines[start:index])).strip("\n")
+    if not content.strip():
+        msg = f"empty RST directive: {lines[start - 1].strip()}"
+        raise ValueError(msg)
+    return content, index
+
+
 def _require_category(name: str) -> str:
-    if name not in _CATEGORIES:
+    if name not in RELEASE_CATEGORIES:
         msg = f"unknown changelog category: {name}"
         raise ValueError(msg)
     return name
@@ -321,6 +384,20 @@ def _require_category(name: str) -> str:
 
 def _convert_rst(line: str, repository: str, issue_role: str) -> str:
     issue_target = "pull" if issue_role == "pull" else "issues"
+    line = re.sub(
+        r"""
+        :PEP:`                   # Sphinx PEP role
+        (?P<number>\d+)          # PEP number
+        (?:\#(?P<anchor>[A-Za-z0-9_-]+))?  # Optional section anchor
+        `                        # Role terminator
+        """,
+        lambda match: (
+            f"[PEP {match['number']}](https://peps.python.org/pep-{int(match['number']):04d}/"
+            f"{'#' + match['anchor'] if match['anchor'] else ''})"
+        ),
+        line,
+        flags=re.VERBOSE | re.IGNORECASE,
+    )
     line = re.sub(
         r"""
         :(?:pr|pull):`       # Pull request role
@@ -362,18 +439,33 @@ def _convert_rst(line: str, repository: str, issue_role: str) -> str:
     )
     line = re.sub(
         r"""
-        ``(?P<code>[^`]+)``   # RST inline code
+        `(?P<label>[^`<>]+)\ <       # RST link text and target separator
+        (?P<url>https?://[^<>\s]+)  # External HTTP URL
+        >`_{1,2}                    # Named or anonymous link suffix
         """,
-        r"`\g<code>`",
+        lambda match: f"[{match['label']}]({match['url']})",
         line,
         flags=re.VERBOSE,
     )
     line = re.sub(
         r"""
+        (?<!`)               # Keep role-like text inside inline literals
         :(?:[a-z]+:)?[a-z]+:`  # RST role with optional domain
-        ~?(?P<name>[^`]+)`     # Referenced name, with optional short display
+        (?:
+            (?P<display>[^<>`]+)\s+<(?P<target>[^<>`]+)>  # Explicit display and target
+            |
+            ~?(?P<name>[^`]+)                             # Referenced name, optionally shortened
+        )`
         """,
-        lambda match: f"`{match['name'].split('.')[-1]}`",
+        lambda match: f"`{match['display'] or match['name'].split('.')[-1]}`",
+        line,
+        flags=re.VERBOSE,
+    )
+    line = re.sub(
+        r"""
+        (?<!`)``(?P<code>[^`]+)``(?!`)   # RST inline code outside Markdown fences
+        """,
+        r"`\g<code>`",
         line,
         flags=re.VERBOSE,
     )
@@ -408,17 +500,7 @@ def _validate_context(context: ReleaseContext) -> None:
         if "/" in context.tag and not context.tag.startswith(f"{context.package}/"):
             msg = f"release tag does not match package: {context.tag}"
             raise ValueError(msg)
-    if not re.fullmatch(
-        r"""
-        (?P<owner>[A-Za-z0-9_.-]+)  # GitHub owner
-        /                            # Repository separator
-        (?P<name>[A-Za-z0-9_.-]+)   # GitHub repository
-        """,
-        context.repository,
-        re.VERBOSE,
-    ):
-        msg = f"invalid repository: {context.repository}"
-        raise ValueError(msg)
+    validate_repository(context.repository)
     if context.artifact_url is not None and not context.artifact_url.startswith("https://"):
         msg = "artifact URL must use HTTPS"
         raise ValueError(msg)
@@ -474,10 +556,10 @@ def _convert_markdown_body(lines: list[str], category_prefix: str) -> str:
                 msg = "empty changelog category"
                 raise ValueError(msg)
             category = source_line[len(category_prefix) :]
-            if category not in _CATEGORIES:
+            if category not in RELEASE_CATEGORIES:
                 msg = f"unknown changelog category: {category}"
                 raise ValueError(msg)
-            line = f"### {_CATEGORIES[category]}"
+            line = f"### {RELEASE_CATEGORIES[category]}"
             in_category = True
             in_item = False
             category_has_item = False
@@ -494,7 +576,7 @@ def _convert_markdown_body(lines: list[str], category_prefix: str) -> str:
         ):
             msg = f"release text outside an item: {source_line}"
             raise ValueError(msg)
-        body.append(_RE_MARKDOWN_AUTHOR.sub(lambda match: f"@{match['handle']}", line))
+        body.append(MARKDOWN_AUTHOR.sub(lambda match: f"@{match['handle']}", line))
 
     if in_category and not category_has_item:
         msg = "empty changelog category"

@@ -1,32 +1,27 @@
 """Read introducing squash subjects from Git history."""
 
 import shutil
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Fragment provenance comes from the local Git checkout.
 lazy from pathlib import Path
 
+from release_creator.process import run_text
+lazy from release_creator.fragments.names import pending_changesets, pending_fragments
 
-def commit_subjects_from_git(directory: Path) -> dict[str, str]:
-    """Read the commit subject that first added each named fragment.
 
-    Returns:
-        Fragment filenames mapped to their introducing subjects.
+def commit_subjects_from_git(directory: Path, *, knope: bool = False) -> dict[str, str]:
+    """Use each fragment's first-add commit to identify its pull request.
 
-    Raises:
-        FileNotFoundError: Git is not installed.
-        ValueError: Git cannot read the checkout history.
-
+    :param directory: Fragment directory in the checkout.
+    :param knope: Use Knope changesets instead of Towncrier fragments.
+    :returns: Fragment filenames mapped to their introducing subjects.
+    :raises FileNotFoundError: Git is not installed.
+    :raises ValueError: Git cannot read the checkout history.
     """
     if (git := shutil.which("git")) is None:
         msg = "Git is required to read fragment history"
         raise FileNotFoundError(msg)
     subjects: dict[str, str] = {}
-    for fragment in sorted(directory.glob("+*.*")):
-        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed Git command; the fragment path is a separate argument.
-            [git, "log", "-1", "--format=%s", "--diff-filter=A", "HEAD", "--", str(fragment)],
-            capture_output=True,
-            check=False,
-            text=True,
-        )
+    for fragment in pending_changesets(directory) if knope else pending_fragments(directory):
+        result = run_text([git, "log", "-1", "--format=%s", "--diff-filter=A", "HEAD", "--", str(fragment)])
         if result.returncode:
             msg = result.stderr.strip() or f"could not read Git history for {fragment}"
             raise ValueError(msg)

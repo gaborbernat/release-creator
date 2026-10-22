@@ -1,5 +1,5 @@
-{% set release = "release-" + versiondata.version | replace(".", "-") %}
-{% set heading = versiondata.version + " (" + versiondata.date + ")" %}
+{% set release = "release-" ~ (versiondata.version | replace(".", "-")) %}
+{% set heading = versiondata.version ~ " (" ~ versiondata.date ~ ")" %}
 .. _{{ release }}:
 
 {% if top_underline == "*" %}
@@ -21,7 +21,8 @@
 {{ underlines[0] * (name | length) }}
 
 {% for text, values in sections[section][category].items() %}
-- {{ text }}{{ (" (" + (values | join(", ")) + ")") if values else "" }}
+{% set missing = values | reject("in", text) | reject("in", text | replace("/pull/", "/issues/") | replace(":pr:", ":issue:")) | list %}
+- {{ text }}{{ (" (" ~ (missing | join(", ")) ~ ")") if missing else "" }}
 {% endfor %}
 
 {% endif %}

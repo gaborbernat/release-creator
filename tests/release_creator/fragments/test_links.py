@@ -20,21 +20,24 @@ if TYPE_CHECKING:
             "+first.feature.md",
             "Add a feature by [@alice](https://github.com/alice).\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="markdown-credit",
         ),
         pytest.param(
             "+first.feature.md",
             "Add a feature, by [@alice](https://github.com/alice).\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="markdown-credit-with-comma",
         ),
         pytest.param(
             "+first.feature.md",
             "Add a feature.\n",
             {"42": PullRequestAuthor(handle="alice", is_bot=False)},
-            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
             id="markdown-resolved-author",
         ),
         pytest.param(
@@ -79,6 +82,52 @@ if TYPE_CHECKING:
             "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
             id="bot-author",
         ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature.\n",
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
+            id="numbered-markdown-author",
+        ),
+        pytest.param(
+            "42.feature.rst",
+            "Add a feature.\n",
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            "Add a feature (:pr:`42`) by :user:`alice`.\n",
+            id="numbered-rst-author",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature.\n",
+            {"42": PullRequestAuthor(handle="dependabot", is_bot=True)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="numbered-bot",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
+            id="numbered-existing-link",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice).\n",
+            id="numbered-existing-link-and-credit",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            {"42": PullRequestAuthor(handle="dependabot", is_bot=True)},
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="numbered-existing-link-and-bot",
+        ),
     ],
 )
 def test_add_pull_request_links(
@@ -113,10 +162,107 @@ def test_add_pull_request_links_preserves_shared_credits(tmp_path: Path) -> None
     )
 
 
-def test_add_pull_request_links_rejects_a_mismatched_author_without_partial_writes(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("heading", "author", "expected"),
+    [
+        pytest.param(
+            "Remove a distrusted root certificate",
+            PullRequestAuthor(handle="alice", is_bot=False),
+            "Remove a distrusted root certificate ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice)",
+            id="human",
+        ),
+        pytest.param(
+            "Remove a distrusted root certificate",
+            PullRequestAuthor(handle="dependabot", is_bot=True),
+            "Remove a distrusted root certificate ([#42](https://github.com/tox-dev/example/pull/42))",
+            id="bot",
+        ),
+        pytest.param(
+            "Remove a distrusted root certificate by [@alice](https://github.com/alice) "
+            "and [@bob](https://github.com/bob)",
+            PullRequestAuthor(handle="alice", is_bot=False),
+            "Remove a distrusted root certificate ([#42](https://github.com/tox-dev/example/pull/42)) "
+            "by [@alice](https://github.com/alice) and [@bob](https://github.com/bob)",
+            id="shared-credit",
+        ),
+    ],
+)
+def test_add_pull_request_links_knope(tmp_path: Path, heading: str, author: PullRequestAuthor, expected: str) -> None:
+    fragment = tmp_path / "trust-roots.md"
+    fragment.write_text(f"---\ndefault: security\n---\n\n# {heading}\n\nMore context.\n")
+    (tmp_path / "README.md").write_text("Knope guide.\n")
+
+    add_pull_request_links(
+        tmp_path,
+        "tox-dev/example",
+        {fragment.name: "Patch trust roots (#42)"},
+        {"42": author},
+        mode="knope",
+    )
+
+    assert fragment.read_text() == f"---\ndefault: security\n---\n\n# {expected}\n\nMore context.\n"
+
+
+def test_add_pull_request_links_knope_is_repeatable(tmp_path: Path) -> None:
+    fragment = tmp_path / "trust-roots.md"
+    fragment.write_text("---\ndefault: security\n---\n\n# Remove a distrusted root certificate\n")
+
+    for _ in range(2):
+        add_pull_request_links(
+            tmp_path,
+            "tox-dev/example",
+            {fragment.name: "Patch trust roots (#42)"},
+            {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+            mode="knope",
+        )
+
+    assert fragment.read_text() == (
+        "---\ndefault: security\n---\n\n# Remove a distrusted root certificate "
+        "([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice)\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        pytest.param("# Missing front matter\n", "missing YAML front matter", id="front-matter"),
+        pytest.param("---\ndefault: security\n---\n\nNot a heading\n", "missing level-one", id="heading"),
+    ],
+)
+def test_add_pull_request_links_knope_rejects_invalid_changeset(tmp_path: Path, content: str, message: str) -> None:
+    fragment = tmp_path / "trust-roots.md"
+    fragment.write_text(content)
+
+    with pytest.raises(ValueError, match=message):
+        add_pull_request_links(tmp_path, "tox-dev/example", {fragment.name: "Patch trust roots (#42)"}, mode="knope")
+
+    assert fragment.read_text() == content
+
+
+def test_add_pull_request_links_preserves_numbered_shared_credits(tmp_path: Path) -> None:
+    fragment = tmp_path / "42.feature.md"
+    fragment.write_text("Add a feature by [@alice](https://github.com/alice).\n")
+
+    add_pull_request_links(
+        tmp_path,
+        "tox-dev/example",
+        {fragment.name: "Add a feature (#42)"},
+        {"42": PullRequestAuthor(handle="alice", is_bot=False)},
+    )
+
+    assert fragment.read_text() == (
+        "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n"
+    )
+
+
+@pytest.mark.parametrize("second_name", ["+second.feature.md", "43.feature.md"])
+def test_add_pull_request_links_rejects_a_mismatched_author_without_partial_writes(
+    tmp_path: Path, second_name: str
+) -> None:
     first = tmp_path / "+first.feature.md"
     first.write_text("Add a feature.\n")
-    second = tmp_path / "+second.feature.md"
+    second = tmp_path / second_name
     second.write_text("Fix a bug by [@bob](https://github.com/bob).\n")
 
     with pytest.raises(ValueError, match="pull request author @alice is missing"):

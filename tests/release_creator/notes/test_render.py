@@ -132,6 +132,45 @@ def test_render_markdown_accepts_existing_version_headings(heading: str) -> None
     )
 
 
+@pytest.mark.parametrize(
+    "tag",
+    [
+        pytest.param("v2.0.0a1", id="alpha"),
+        pytest.param("2.0.0b1", id="beta"),
+        pytest.param("1.10rc1", id="two-part-candidate"),
+        pytest.param("v1.3.4rc", id="candidate-without-number"),
+        pytest.param("0.10.2.0", id="four-part"),
+    ],
+)
+def test_render_markdown_accepts_historical_version_shapes(tag: str) -> None:
+    changelog = dedent(f"""\
+        <a name="release-{tag.replace(".", "-")}"></a>
+
+        ## {tag} (2021-05-13)
+
+        ### Fixed
+
+        - Correct the current release.
+
+        <a name="release-0-1-0a1"></a>
+
+        ## 0.1.0a1 (2020-01-01)
+
+        ### Added
+
+        - An older change.
+
+        [{tag}]: https://github.com/tox-dev/example/commits/{tag}
+        """)
+
+    result = render_markdown(changelog, ReleaseContext(tag=tag, repository="tox-dev/example"))
+
+    assert result == (
+        "### Bug fixes\n\n- Correct the current release.\n\n"
+        f"**Full Changelog**: https://github.com/tox-dev/example/commits/{tag}\n"
+    )
+
+
 def test_render_markdown_selects_package_history() -> None:
     changelog = dedent("""\
         # Changelog
@@ -248,6 +287,77 @@ def test_render_markdown_cross_checks_pull_request_authors() -> None:
 
 
 @pytest.mark.parametrize(
+    "generated",
+    [
+        pytest.param("* Another change\n", id="omitted-pull-request"),
+        pytest.param(
+            "* Another change by @bob in https://github.com/tox-dev/other/pull/42\n",
+            id="same-number-in-another-repository",
+        ),
+    ],
+)
+def test_render_markdown_uses_source_credit_when_generated_notes_omit_pull_request(generated: str) -> None:
+    changelog = dedent("""\
+        ## 1.2.3 (today)
+
+        ### Added
+
+        - Add Python support ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).
+        """)
+
+    result = render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert "- Add Python support ([#42](https://github.com/tox-dev/example/pull/42)) by @alice." in result
+
+
+def test_render_rst_keeps_named_credit_when_generated_author_is_unavailable() -> None:
+    changelog = dedent("""\
+        3.5.0 (2022-02-15)
+        ==================
+
+        Added
+        -----
+
+        - Allow a lock to be used as a context decorator. :pr:`128` - by Hirsch Alter.
+        """)
+    generated = dedent("""\
+        ## What's Changed
+        * Enable use as a context decorator in https://github.com/tox-dev/filelock/pull/128
+        * Fix file object treatment in docs by @JustAnotherArchivist in https://github.com/tox-dev/filelock/pull/130
+
+        ## New Contributors
+        * @JustAnotherArchivist made their first contribution in https://github.com/tox-dev/filelock/pull/130
+        """)
+
+    result = render_rst(
+        changelog,
+        ReleaseContext(tag="3.5.0", repository="tox-dev/filelock", previous="3.4.2"),
+        "pull",
+        generated,
+    )
+
+    assert result == (
+        '<a name="release-3-5-0-added"></a>\n\n'
+        "### Features\n\n"
+        "- Allow a lock to be used as a context decorator. [#128](https://github.com/tox-dev/filelock/pull/128) "
+        "by Hirsch Alter.\n\n"
+        '<a name="release-3-5-0-new-contributors"></a>\n\n'
+        "### New Contributors\n\n"
+        "- @JustAnotherArchivist made their first contribution in "
+        "[#130](https://github.com/tox-dev/filelock/pull/130)\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/filelock/compare/3.4.2...3.5.0\n"
+    )
+
+
+def test_render_rst_rejects_uncredited_entry_with_unavailable_generated_author() -> None:
+    changelog = "3.5.0 (2022-02-15)\n==================\n\nAdded\n-----\n\n- Add context decorator. :pr:`128`.\n"
+    generated = "* Enable context decorator in https://github.com/tox-dev/filelock/pull/128\n"
+
+    with pytest.raises(ValueError, match="no credit for pull request #128 with an unavailable author"):
+        render_rst(changelog, ReleaseContext(tag="3.5.0", repository="tox-dev/filelock"), "pull", generated)
+
+
+@pytest.mark.parametrize(
     ("changelog", "generated", "message"),
     [
         pytest.param(
@@ -257,15 +367,21 @@ def test_render_markdown_cross_checks_pull_request_authors() -> None:
             id="missing-changelog-credit",
         ),
         pytest.param(
-            "## 1.2.3 (today)\n\n### Added\n\n- Add a feature "
-            "([#42](https://github.com/tox-dev/example/pull/42)) by @alice.\n",
+            "## 1.2.3 (today)\n\n### Added\n\n- Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
             "* Add a feature\n",
             "no author for pull request #42",
             id="missing-generated-author",
         ),
         pytest.param(
-            "## 1.2.3 (today)\n\n### Added\n\n- Add a feature "
-            "([#42](https://github.com/tox-dev/example/pull/42)) by @alice.\n",
+            "## 1.2.3 (today)\n\n### Added\n\n"
+            "- Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by @alice.\n"
+            "- Add another feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            "* Another change\n",
+            "no author for pull request #42",
+            id="missing-credit-on-second-entry",
+        ),
+        pytest.param(
+            "## 1.2.3 (today)\n\n### Added\n\n- Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
             "* Add a feature by @alice in https://github.com/tox-dev/other/pull/42\n",
             "no author for pull request #42",
             id="different-repository",
@@ -304,22 +420,36 @@ def test_render_markdown_does_not_credit_bot_authors() -> None:
 
 
 @pytest.mark.parametrize(
-    "reference",
+    ("reference", "heading", "pull_url"),
     [
-        pytest.param("#42", id="short-reference"),
-        pytest.param("https://github.com/tox-dev/example/pull/42", id="pull-url"),
+        pytest.param("#42", "##", "https://github.com/tox-dev/example/pull/42", id="h2-short-reference"),
+        pytest.param("#42", "###", "https://github.com/tox-dev/example/pull/42", id="h3-short-reference"),
+        pytest.param(
+            "https://github.com/upstream/example/pull/42",
+            "##",
+            "https://github.com/upstream/example/pull/42",
+            id="h2-cross-repository-pull-url",
+        ),
+        pytest.param(
+            "https://github.com/upstream/example/pull/42",
+            "###",
+            "https://github.com/upstream/example/pull/42",
+            id="h3-cross-repository-pull-url",
+        ),
     ],
 )
-def test_render_markdown_keeps_credited_new_contributors(reference: str) -> None:
+def test_render_markdown_keeps_human_new_contributors(reference: str, heading: str, pull_url: str) -> None:
     changelog = "## 1.2.3 (today)\n\n### Added\n\n- New option by [@alice](https://github.com/alice).\n"
     generated = dedent(f"""\
         <!-- Release notes generated using configuration in .github/release.yml at main -->
         ## What's Changed
         * Generated change
-        ## New Contributors
+        {heading} New Contributors
         * @alice made their first contribution in {reference}
         * @dependabot[bot] made their first contribution in #43
-        * @uncredited made their first contribution in #44
+        * @bob made their first contribution in #44
+        ## Other changes
+        * @charlie made their first contribution in #45
         **Full Changelog**: unrelated
         """)
 
@@ -328,7 +458,8 @@ def test_render_markdown_keeps_credited_new_contributors(reference: str) -> None
     assert result == (
         "### Features\n\n- New option by @alice.\n\n"
         '<a name="release-1-2-3-new-contributors"></a>\n\n'
-        "### New Contributors\n\n- @alice made their first contribution in #42\n\n"
+        f"### New Contributors\n\n- @alice made their first contribution in [#42]({pull_url})\n"
+        "- @bob made their first contribution in [#44](https://github.com/tox-dev/example/pull/44)\n\n"
         "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
     )
 
@@ -337,12 +468,25 @@ def test_render_markdown_keeps_credited_new_contributors(reference: str) -> None
     "generated",
     [
         pytest.param("## What's Changed\n* One change\n", id="no-section"),
-        pytest.param("## New Contributors\n* @uncredited made their first contribution in #4\n", id="no-credit"),
+        pytest.param("## New Contributors\n* @dependabot[bot] made their first contribution in #4\n", id="bot"),
     ],
 )
 def test_render_markdown_omits_unverified_contributors(generated: str) -> None:
     result = render_markdown("## 1.2.3 (today)\n", ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
     assert result == "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+
+
+def test_render_markdown_keeps_first_contributor_without_news_entry() -> None:
+    generated = "## New Contributors\n* @alice made their first contribution in #42\n"
+
+    result = render_markdown("## 1.2.3 (today)\n", ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert result == (
+        '<a name="release-1-2-3-new-contributors"></a>\n\n'
+        "### New Contributors\n\n"
+        "- @alice made their first contribution in [#42](https://github.com/tox-dev/example/pull/42)\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
 
 
 def test_render_rst_maps_categories_and_credits() -> None:
@@ -380,6 +524,207 @@ def test_render_rst_maps_categories_and_credits() -> None:
     )
 
 
+def test_render_rst_keeps_top_level_warning_outside_bullet() -> None:
+    changelog = dedent("""\
+        v20.0.0b1 (2020-01-28)
+        =======================
+
+        Removed
+        -------
+
+        - A shim remains for Python 2.
+
+        .. warning::
+
+            Version ``20.0.0b1`` starts a new release history. The old history is in the `legacy docs
+            <https://virtualenv.pypa.io/en/legacy/changes.html>`_.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="20.0.0b1", repository="pypa/virtualenv"))
+
+    assert result == (
+        '<a name="release-20-0-0b1-removed"></a>\n\n### Removals\n\n'
+        "- A shim remains for Python 2.\n\n"
+        "> **Warning:** Version `20.0.0b1` starts a new release history. The old history is in the "
+        "[legacy docs](https://virtualenv.pypa.io/en/legacy/changes.html).\n\n"
+        "**Full Changelog**: https://github.com/pypa/virtualenv/commits/20.0.0b1\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("language", "source", "expected"),
+    [
+        pytest.param(
+            "dockerfile",
+            "ENV VIRTUALENV_READ_ONLY_APP_DATA=1\n      RUN virtualenv /tmp/venv",
+            "ENV VIRTUALENV_READ_ONLY_APP_DATA=1\n  RUN virtualenv /tmp/venv",
+            id="dockerfile",
+        ),
+        pytest.param(
+            "console",
+            "created virtual environment in 350ms\n        creator CPython3Posix(dest=/x)",
+            "created virtual environment in 350ms\n    creator CPython3Posix(dest=/x)",
+            id="console",
+        ),
+    ],
+)
+def test_render_rst_keeps_nested_code_block(language: str, source: str, expected: str) -> None:
+    changelog = (
+        "20.2.0 (2020-08-25)\n===================\n\nAdded\n-----\n\n"
+        "- Display the virtual environment, for example:\n\n"
+        f"  .. code-block:: {language}\n\n      {source}\n\n"
+        "  Patch by :user:`alice`. (:pr:`2009`)\n"
+    )
+
+    result = render_rst(changelog, ReleaseContext(tag="20.2.0", repository="pypa/virtualenv"))
+
+    assert result == (
+        '<a name="release-20-2-0-added"></a>\n\n### Features\n\n'
+        "- Display the virtual environment, for example:\n\n"
+        f"  ```{language}\n  {expected}\n  ```\n\n"
+        "  Patch by @alice. ([#2009](https://github.com/pypa/virtualenv/pull/2009))\n\n"
+        "**Full Changelog**: https://github.com/pypa/virtualenv/commits/20.2.0\n"
+    )
+
+
+def test_render_rst_keeps_nested_bullets() -> None:
+    changelog = dedent("""\
+        v20.24.4 (2023-08-30)
+        =====================
+
+        Packaging
+        ---------
+
+        - Upgrade embedded wheels:
+
+          - setuptools to ``68.1.2`` from ``68.1.0`` on ``3.8+``
+          - wheel to ``0.41.2`` from ``0.41.1`` on ``3.7+`` (:pr:`2628`)
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="20.24.4", repository="pypa/virtualenv"))
+
+    assert result == (
+        '<a name="release-20-24-4-packaging"></a>\n\n### Packaging\n\n'
+        "- Upgrade embedded wheels:\n"
+        "  - setuptools to `68.1.2` from `68.1.0` on `3.8+`\n"
+        "  - wheel to `0.41.2` from `0.41.1` on `3.7+` ([#2628](https://github.com/pypa/virtualenv/pull/2628))\n\n"
+        "**Full Changelog**: https://github.com/pypa/virtualenv/commits/20.24.4\n"
+    )
+
+
+def test_render_rst_keeps_paragraph_after_nested_bullets() -> None:
+    changelog = dedent("""\
+        v20.0.24 (2020-07-15)
+        =====================
+
+        Added
+        -----
+
+        - Ensure seeded packages remain current:
+
+          - add a CLI flag
+          - upgrade embedded wheels after 28 days
+
+          More details under :ref:`wheels` - by :user:`alice`. (:issue:`1821`)
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="20.0.24", repository="pypa/virtualenv"))
+
+    assert result == (
+        '<a name="release-20-0-24-added"></a>\n\n### Features\n\n'
+        "- Ensure seeded packages remain current:\n\n"
+        "  - add a CLI flag\n"
+        "  - upgrade embedded wheels after 28 days\n\n"
+        "  More details under `wheels` by @alice. ([#1821](https://github.com/pypa/virtualenv/issues/1821))\n\n"
+        "**Full Changelog**: https://github.com/pypa/virtualenv/commits/20.0.24\n"
+    )
+
+
+def test_render_rst_keeps_group_credit_after_nested_bullets() -> None:
+    changelog = dedent("""\
+        v20.27.0 (2024-10-17)
+        =====================
+
+        Packaging
+        ---------
+
+        - Upgrade embedded wheels:
+
+          - setuptools to ``75.2.0``
+          - Removed pip of ``24.0``
+          - by :user:`alice`. (:pr:`2783`)
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="20.27.0", repository="pypa/virtualenv"))
+
+    assert result == (
+        '<a name="release-20-27-0-packaging"></a>\n\n### Packaging\n\n'
+        "- Upgrade embedded wheels:\n\n"
+        "  - setuptools to `75.2.0`\n"
+        "  - Removed pip of `24.0`\n\n"
+        "  by @alice. ([#2783](https://github.com/pypa/virtualenv/pull/2783))\n\n"
+        "**Full Changelog**: https://github.com/pypa/virtualenv/commits/20.27.0\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        pytest.param(".. code-block:: console\n\n    output\n", "code block outside", id="top-level-code"),
+        pytest.param("- Entry.\n\n  .. code-block:: console\n", "empty RST directive", id="empty-code"),
+        pytest.param("  - Nested entry.\n", "release item outside", id="orphan-nested-item"),
+        pytest.param("- Entry.\n\n.. note::\n", "unexpected release text", id="unknown-directive"),
+    ],
+)
+def test_render_rst_rejects_malformed_blocks(source: str, message: str) -> None:
+    changelog = f"1.2.3 (today)\n=============\n\nAdded\n-----\n\n{source}"
+
+    with pytest.raises(ValueError, match=message):
+        render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+
+def test_render_rst_joins_wrapped_author_credit() -> None:
+    changelog = dedent("""\
+        1.2.3 (2026-10-18)
+        ==================
+
+        Fixed
+        -----
+
+        - Correct a long description. :pr:`42` - by
+          :user:`alice` and :user:`bob`.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
+        "- Correct a long description. [#42](https://github.com/tox-dev/example/pull/42) by @alice and @bob.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
+def test_render_rst_joins_wrapped_author_marker() -> None:
+    changelog = dedent("""\
+        1.2.3 (2026-10-18)
+        ==================
+
+        Fixed
+        -----
+
+        - Correct a long description. :pr:`42`
+          - by :user:`alice` and :user:`bob`.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
+        "- Correct a long description. [#42](https://github.com/tox-dev/example/pull/42) by @alice and @bob.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
 def test_render_rst_preserves_legacy_other_changes() -> None:
     changelog = "1.2.3 (today)\n==============\n\nOther changes\n-------------\n\n- Update development tooling.\n"
 
@@ -411,6 +756,111 @@ def test_render_rst_accepts_two_part_historical_tags(heading: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "tag",
+    [
+        pytest.param("v2.0.0a1", id="alpha"),
+        pytest.param("2.0.0b1", id="beta"),
+        pytest.param("1.10rc1", id="two-part-candidate"),
+        pytest.param("v1.3.4rc", id="candidate-without-number"),
+        pytest.param("0.10.2.0", id="four-part"),
+    ],
+)
+def test_render_rst_accepts_historical_version_shapes(tag: str) -> None:
+    changelog = dedent(f"""\
+        {tag} (2021-05-13)
+        ==================
+
+        Fixed
+        -----
+
+        - Correct the current release.
+
+        0.1.0 (2020-01-01)
+        ==================
+
+        Added
+        -----
+
+        - An older change.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag=tag, repository="tox-dev/example"))
+
+    assert result == (
+        f'<a name="release-{tag.replace(".", "-")}-fixed"></a>\n\n'
+        "### Bug fixes\n\n- Correct the current release.\n\n"
+        f"**Full Changelog**: https://github.com/tox-dev/example/commits/{tag}\n"
+    )
+
+
+def test_render_rst_accepts_undated_linked_four_part_heading() -> None:
+    changelog = dedent("""\
+        `0.12.1.0 <https://github.com/tox-dev/example/tree/0.12.1.0>`_
+        ===============================================================
+
+        Fixed
+        -----
+
+        - Correct the current release.
+
+        `0.12.0.4 <https://github.com/tox-dev/example/tree/0.12.0.4>`_
+        ===============================================================
+
+        Added
+        -----
+
+        - Add an earlier feature.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="0.12.1.0", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-0-12-1-0-fixed"></a>\n\n'
+        "### Bug fixes\n\n- Correct the current release.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/0.12.1.0\n"
+    )
+
+
+def test_render_rst_accepts_linked_prerelease_heading() -> None:
+    changelog = dedent("""\
+        `v2.0.0a1 <https://github.com/tox-dev/example/tree/v2.0.0a1>`_ - 2021-05-13
+        ===========================================================================
+
+        Added
+        -----
+
+        - Add the first release.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="v2.0.0a1", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-v2-0-0a1-added"></a>\n\n'
+        "### Features\n\n- Add the first release.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/v2.0.0a1\n"
+    )
+
+
+def test_render_rst_omits_empty_prerelease_section() -> None:
+    changelog = dedent("""\
+        v2.0.0a2 (2021-05-13)
+        =====================
+
+        v2.0.0a1 (2021-05-13)
+        =====================
+
+        Added
+        -----
+
+        - Add the first release.
+        """)
+
+    result = render_rst(changelog, ReleaseContext(tag="v2.0.0a2", repository="tox-dev/example"))
+
+    assert result == "**Full Changelog**: https://github.com/tox-dev/example/commits/v2.0.0a2\n"
+
+
 def test_render_rst_rejects_package_selection() -> None:
     with pytest.raises(ValueError, match="requires a Markdown changelog"):
         render_rst("", ReleaseContext(tag="1.2.3", repository="tox-dev/example", package="example"))
@@ -428,6 +878,117 @@ def test_render_rst_converts_explicit_author_link() -> None:
         """)
     result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
     assert "- Accept absolute `file:///` URLs ([#3](https://github.com/tox-dev/example/pull/3)) by @alice." in result
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
+            "`PEP 838 <https://peps.python.org/pep-0838/>`_",
+            "[PEP 838](https://peps.python.org/pep-0838/)",
+            id="named-link",
+        ),
+        pytest.param(
+            "`lxml <https://lxml.de/>`__",
+            "[lxml](https://lxml.de/)",
+            id="anonymous-link",
+        ),
+    ],
+)
+def test_render_rst_converts_external_link(source: str, expected: str) -> None:
+    changelog = f"1.2.3 (today)\n==============\n\nAdded\n-----\n\n- Read {source}.\n"
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-added"></a>\n\n### Features\n\n'
+        f"- Read {expected}.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
+            ":meth:`AsyncReadWriteLock.close() <filelock.AsyncReadWriteLock.close>`",
+            "`AsyncReadWriteLock.close()`",
+            id="explicit-method-display",
+        ),
+        pytest.param(
+            ":class:`the lock <filelock.ReadWriteLock>`",
+            "`the lock`",
+            id="explicit-class-display",
+        ),
+        pytest.param(":class:`~filelock.ReadWriteLock`", "`ReadWriteLock`", id="short-reference"),
+        pytest.param(":data:`math.inf`", "`inf`", id="plain-reference"),
+    ],
+)
+def test_render_rst_keeps_role_display(source: str, expected: str) -> None:
+    changelog = f"1.2.3 (today)\n==============\n\nFixed\n-----\n\n- Call {source}.\n"
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
+        f"- Call {expected}.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
+            "Type ``:ivar:``, ``:cvar:`` and ``:var:`` fields",
+            "Type `:ivar:`, `:cvar:` and `:var:` fields",
+            id="rst-inline-literals",
+        ),
+        pytest.param(
+            "Use `:rtype:` and `:return:` fields",
+            "Use `:rtype:` and `:return:` fields",
+            id="single-backtick-literals",
+        ),
+        pytest.param(
+            "Merge into ``:returns:`` beside :class:`the field <package.Field>`",
+            "Merge into `:returns:` beside `the field`",
+            id="literal-and-role",
+        ),
+    ],
+)
+def test_render_rst_preserves_field_literals(source: str, expected: str) -> None:
+    changelog = f"1.2.3 (today)\n==============\n\nFixed\n-----\n\n- {source}.\n"
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-fixed"></a>\n\n### Bug fixes\n\n'
+        f"- {expected}.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [
+        pytest.param(":PEP:`751`", "[PEP 751](https://peps.python.org/pep-0751/)", id="pep"),
+        pytest.param(
+            ":PEP:`517#in-tree-build-backends`",
+            "[PEP 517](https://peps.python.org/pep-0517/#in-tree-build-backends)",
+            id="section",
+        ),
+    ],
+)
+def test_render_rst_links_pep_role(role: str, expected: str) -> None:
+    changelog = f"1.2.3 (today)\n==============\n\nAdded\n-----\n\n- Support {role}.\n"
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"))
+
+    assert result == (
+        '<a name="release-1-2-3-added"></a>\n\n### Features\n\n'
+        f"- Support {expected}.\n\n"
+        "**Full Changelog**: https://github.com/tox-dev/example/commits/1.2.3\n"
+    )
 
 
 def test_render_rst_keeps_issue_role_as_issue() -> None:

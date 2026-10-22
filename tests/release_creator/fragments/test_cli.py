@@ -35,6 +35,83 @@ def test_fragments_cli_links_squash_pull_request(tmp_path: Path, monkeypatch: py
     assert fragment.read_text() == "Add a feature ([#3](https://github.com/tox-dev/example/pull/3)).\n"
 
 
+def test_fragments_cli_links_knope_changeset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    directory = tmp_path / ".changeset"
+    directory.mkdir()
+    fragment = directory / "trust-roots.md"
+    fragment.write_text("---\ndefault: security\n---\n\n# Remove a distrusted root certificate\n")
+    commits = tmp_path / "commits.tsv"
+    commits.write_text("trust-roots.md\tPatch trust roots (#2377)\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "release-creator",
+            "fragments",
+            "--format",
+            "knope",
+            "--repository",
+            "tox-dev/peryx",
+            "--commit-map",
+            str(commits),
+        ],
+    )
+
+    main()
+
+    assert fragment.read_text() == (
+        "---\ndefault: security\n---\n\n"
+        "# Remove a distrusted root certificate ([#2377](https://github.com/tox-dev/peryx/pull/2377))\n"
+    )
+
+
+def test_fragments_cli_rejects_numbered_prs_for_knope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "release-creator",
+            "fragments",
+            "--format",
+            "knope",
+            "--numbered-prs",
+            "--repository",
+            "tox-dev/peryx",
+            "--git",
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        main()
+
+    assert "--numbered-prs applies only to Towncrier" in capsys.readouterr().err
+
+
+def test_fragments_cli_rejects_unsupported_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    directory = tmp_path / "changelog.d"
+    directory.mkdir()
+    fragment = directory / "topic.feature.md"
+    fragment.write_text("Add a feature.\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["release-creator", "fragments", "--repository", "tox-dev/example", "--commit-map", "missing.tsv"],
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        main()
+
+    assert "unsupported changelog fragment name" in capsys.readouterr().err
+    assert fragment.read_text() == "Add a feature.\n"
+
+
 def test_fragments_cli_resolves_authors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     directory = tmp_path / "changelog.d"
     directory.mkdir()
@@ -67,7 +144,94 @@ def test_fragments_cli_resolves_authors(tmp_path: Path, monkeypatch: pytest.Monk
     assert fragment.read_text() == (
         "Add a feature ([#3](https://github.com/tox-dev/example/pull/3)) by [@alice](https://github.com/alice).\n"
     )
-    resolve.assert_called_once_with("tox-dev/example", {"+topic.feature.md": "Add a feature (#3)"})
+    resolve.assert_called_once_with("tox-dev/example", {"+topic.feature.md": "Add a feature (#3)"}, numbered_prs=False)
+
+
+def test_fragments_cli_resolves_numbered_issue_author(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    directory = tmp_path / "changelog.d"
+    directory.mkdir()
+    fragment = directory / "3.feature.md"
+    fragment.write_text("Add a feature.\n")
+    commits = tmp_path / "commits.tsv"
+    commits.write_text("3.feature.md\tAdd a feature (#4)\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "release-creator",
+            "fragments",
+            "--repository",
+            "tox-dev/example",
+            "--commit-map",
+            str(commits),
+            "--resolve-authors",
+        ],
+    )
+    resolve = create_autospec(
+        fragments_cli.pull_request_authors,
+        return_value={"4": PullRequestAuthor(handle="alice", is_bot=False)},
+    )
+    monkeypatch.setattr(fragments_cli, "pull_request_authors", resolve)
+
+    main()
+
+    assert fragment.read_text() == (
+        "Add a feature ([#4](https://github.com/tox-dev/example/pull/4)) by [@alice](https://github.com/alice).\n"
+    )
+    resolve.assert_called_once_with("tox-dev/example", {"3.feature.md": "Add a feature (#4)"}, numbered_prs=False)
+
+
+def test_fragments_cli_uses_numbered_prs_and_named_squash_commits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / "changelog.d"
+    directory.mkdir()
+    historical = directory / "6.feature.md"
+    historical.write_text("Support GNOME Shell 51, including Fedora 45.\n")
+    current = directory / "+new.feature.md"
+    current.write_text("Add a new feature.\n")
+    commits = tmp_path / "commits.tsv"
+    commits.write_text("6.feature.md\tBackfill history (#12)\n+new.feature.md\tAdd a new feature (#13)\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "release-creator",
+            "fragments",
+            "--repository",
+            "quotaline/quotaline",
+            "--commit-map",
+            str(commits),
+            "--numbered-prs",
+            "--resolve-authors",
+        ],
+    )
+    resolve = create_autospec(
+        fragments_cli.pull_request_authors,
+        return_value={
+            "6": PullRequestAuthor(handle="gaborbernat", is_bot=False),
+            "13": PullRequestAuthor(handle="alice", is_bot=False),
+        },
+    )
+    monkeypatch.setattr(fragments_cli, "pull_request_authors", resolve)
+
+    main()
+
+    assert historical.read_text() == (
+        "Support GNOME Shell 51, including Fedora 45 "
+        "([#6](https://github.com/quotaline/quotaline/pull/6)) by [@gaborbernat](https://github.com/gaborbernat).\n"
+    )
+    assert current.read_text() == (
+        "Add a new feature ([#13](https://github.com/quotaline/quotaline/pull/13)) "
+        "by [@alice](https://github.com/alice).\n"
+    )
+    resolve.assert_called_once_with(
+        "quotaline/quotaline",
+        {"6.feature.md": "Backfill history (#12)", "+new.feature.md": "Add a new feature (#13)"},
+        numbered_prs=True,
+    )
 
 
 def test_fragments_cli_reports_missing_commit_map(
@@ -96,11 +260,19 @@ def test_fragments_cli_reads_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     directory.mkdir()
     fragment = directory / "+topic.feature.md"
     fragment.write_text("Add a feature.\n")
+    numbered = directory / "3.doc.md"
+    numbered.write_text("Document a feature by a contributor.\n")
     git = shutil.which("git")
     assert git is not None
-    subprocess.run([git, "init", "-q", str(tmp_path)], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed Git setup in a temp repo.
-    subprocess.run([git, "-C", str(tmp_path), "add", "changelog.d"], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]  # Git test setup.
-    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Git test setup with fixed flags and temp path.
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Git fixture.
+        [git, "init", "-q", str(tmp_path)],
+        check=True,
+    )
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Git fixture.
+        [git, "-C", str(tmp_path), "add", "changelog.d"],
+        check=True,
+    )
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Git fixture.
         [
             git,
             "-C",
@@ -121,6 +293,10 @@ def test_fragments_cli_reads_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     main()
 
     assert fragment.read_text() == "Add a feature ([#3](https://github.com/tox-dev/example/pull/3)).\n"
+    assert (
+        numbered.read_text()
+        == "Document a feature by a contributor ([#3](https://github.com/tox-dev/example/pull/3)).\n"
+    )
 
 
 def test_fragments_cli_reports_git_error(
