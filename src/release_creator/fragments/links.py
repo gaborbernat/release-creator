@@ -40,15 +40,6 @@ _RE_RST_USER: Final = re.compile(
 type _LinkMode = Literal["towncrier", "knope", "numbered-prs"]
 
 
-@dataclass(frozen=True, kw_only=True)
-class _LinkTarget:
-    fragment: Path
-    repository: str
-    number: str
-    author: PullRequestAuthor | None
-    knope: bool
-
-
 def add_pull_request_links(
     directory: Path,
     repository: str,
@@ -95,6 +86,15 @@ def _link_fragment(
     return f"{_link_text(content.rstrip(), target)}\n"
 
 
+@dataclass(frozen=True, kw_only=True)
+class _LinkTarget:
+    fragment: Path
+    repository: str
+    number: str
+    author: PullRequestAuthor | None
+    knope: bool
+
+
 def _link_text(
     content: str,
     target: _LinkTarget,
@@ -135,16 +135,16 @@ def _has_pull_request_link(content: str, repository: str, number: str) -> bool:
     )
 
 
-def _pull_request_link(repository: str, number: str, extension: str) -> str:
-    return f"(:pr:`{number}`)" if extension == ".rst" else f"([#{number}]({_pull_request_url(repository, number)}))"
-
-
 def _append_pull_request_link(content: str, target: _LinkTarget, author: str | None) -> str:
     link = _pull_request_link(target.repository, target.number, target.fragment.suffix)
     content = f"{content.removesuffix('.')} {link}"
     if author is not None:
         content += f" by {_author_credit(author, target.fragment.suffix)}"
     return f"{content}{'' if target.knope else '.'}"
+
+
+def _pull_request_link(repository: str, number: str, extension: str) -> str:
+    return f"(:pr:`{number}`)" if extension == ".rst" else f"([#{number}]({_pull_request_url(repository, number)}))"
 
 
 def _author_credit(author: str, extension: str) -> str:

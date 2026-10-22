@@ -28,40 +28,6 @@ _RE_HANDLE: Final = re.compile(
 )
 
 
-@dataclass(frozen=True, kw_only=True)
-class PullRequestAuthor:
-    """GitHub account attached to a merged pull request."""
-
-    handle: str
-    is_bot: bool
-
-
-def pull_request_number(subject: str) -> str:
-    """Return the pull request number from a squash commit subject.
-
-    :param subject: Squash commit subject.
-    :returns: Pull request number from the squash commit subject.
-    :raises ValueError: The commit subject does not end in a squash pull request number.
-    """
-    if (match := _RE_PULL_REQUEST.search(subject)) is None:
-        msg = f"no squash pull request number in commit subject: {subject}"
-        raise ValueError(msg)
-    return cast("str", match["number"])
-
-
-def fragment_pull_request_number(name: str, subject: str, *, numbered_prs: bool = False) -> str:
-    """Use a numbered stem as its PR only where the repository declares that convention.
-
-    :param name: Fragment filename.
-    :param subject: Introducing squash commit subject.
-    :param numbered_prs: Treat a numeric fragment stem as the original PR number.
-    :returns: Original PR number for opted-in numeric fragments; otherwise the squash PR number.
-    """
-    if numbered_prs and (number := fragment_number(Path(name))) is not None:
-        return number
-    return pull_request_number(subject)
-
-
 def pull_request_authors(
     repository: str, commit_subjects: dict[str, str], *, numbered_prs: bool = False
 ) -> dict[str, PullRequestAuthor]:
@@ -110,6 +76,40 @@ def pull_request_authors(
             raise ValueError(msg)
         authors[number] = PullRequestAuthor(handle=handle, is_bot=bot)
     return authors
+
+
+def fragment_pull_request_number(name: str, subject: str, *, numbered_prs: bool = False) -> str:
+    """Use a numbered stem as its PR only where the repository declares that convention.
+
+    :param name: Fragment filename.
+    :param subject: Introducing squash commit subject.
+    :param numbered_prs: Treat a numeric fragment stem as the original PR number.
+    :returns: Original PR number for opted-in numeric fragments; otherwise the squash PR number.
+    """
+    if numbered_prs and (number := fragment_number(Path(name))) is not None:
+        return number
+    return pull_request_number(subject)
+
+
+def pull_request_number(subject: str) -> str:
+    """Return the pull request number from a squash commit subject.
+
+    :param subject: Squash commit subject.
+    :returns: Pull request number from the squash commit subject.
+    :raises ValueError: The commit subject does not end in a squash pull request number.
+    """
+    if (match := _RE_PULL_REQUEST.search(subject)) is None:
+        msg = f"no squash pull request number in commit subject: {subject}"
+        raise ValueError(msg)
+    return cast("str", match["number"])
+
+
+@dataclass(frozen=True, kw_only=True)
+class PullRequestAuthor:
+    """GitHub account attached to a merged pull request."""
+
+    handle: str
+    is_bot: bool
 
 
 __all__ = [
