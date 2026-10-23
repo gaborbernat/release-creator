@@ -4,21 +4,22 @@
 from __future__ import annotations
 
 lazy import json
-lazy import shutil
 lazy from dataclasses import dataclass
-lazy from typing import Final, cast
+lazy from typing import Final
 
-lazy from release_creator.process import run_text
+lazy from release_creator.process import required_executable, run_text
 
 
 def fragment_pull_requests(repository: str, commits: dict[str, str]) -> dict[str, PullRequest]:
     """Resolve each fragment through GitHub's commit-to-pull-request API.
 
+    A missing GitHub CLI executable raises :exc:`FileNotFoundError`.
+
     :param repository: GitHub owner and repository.
     :param commits: Fragment names mapped to introducing commit hashes.
     :returns: Fragment names mapped to the merged pull request and its author.
     """
-    gh = cast("str", shutil.which("gh"))
+    gh = required_executable("gh")
     by_commit = _pulls(gh, repository, list(dict.fromkeys(commits.values())))
     return {name: by_commit[sha] for name, sha in commits.items()}
 

@@ -1,19 +1,19 @@
 """Validate changed changelog fragments in a pull request."""
 
-lazy import shutil
 lazy import sys
 lazy import tomllib
 lazy from fnmatch import fnmatch
 lazy from pathlib import Path
-lazy from typing import cast
 
 lazy from release_creator.fragments.knope import changeset_parts, knope_kinds, load_knope_package
 lazy from release_creator.fragments.names import fragment_category
-lazy from release_creator.process import run_text
+lazy from release_creator.process import required_executable, run_text
 
 
 def changed_fragments(config: Path, base: str) -> int:
     """Count valid added or modified fragments relative to the PR base.
+
+    A missing Git executable raises :exc:`FileNotFoundError`.
 
     :param config: Towncrier configuration file.
     :param base: Target branch name for the pull request diff.
@@ -72,6 +72,8 @@ def _validate_changed_fragment(
 def validate_fragment_deletions(config: Path) -> None:
     """Reject staged deletions that Towncrier could not have consumed.
 
+    A missing Git executable raises :exc:`FileNotFoundError`.
+
     :param config: Towncrier configuration file.
     :raises ValueError: A deleted path is not a configured fragment.
     """
@@ -84,6 +86,8 @@ def validate_fragment_deletions(config: Path) -> None:
 
 def changed_changesets(config: Path, base: str) -> int:
     """Count and validate changed Knope changesets.
+
+    A missing Git executable raises :exc:`FileNotFoundError`.
 
     :param config: Knope configuration file.
     :param base: Target branch name for the pull request diff.
@@ -156,7 +160,7 @@ def _git_paths(directory: Path, options: list[str]) -> list[Path]:
 
 
 def _git_executable() -> str:
-    return cast("str", shutil.which("git"))
+    return required_executable("git")
 
 
 __all__ = [
