@@ -2,6 +2,27 @@
 
 <!-- towncrier release notes start -->
 
+<a name="release-0-6-1"></a>
+
+## 0.6.1 (2026-10-23)
+
+<a name="release-0-6-1-fixed"></a>
+
+### Fixed
+
+- Accept Knope changelog sections configured with footers and no changeset types
+  ([#18](https://github.com/tox-dev/release-creator/pull/18)) by [@gaborbernat](https://github.com/gaborbernat).
+- Apply timeouts to the Git and Towncrier commands used for fragment checks and identify the full command when it times
+  out ([#18](https://github.com/tox-dev/release-creator/pull/18)) by [@gaborbernat](https://github.com/gaborbernat).
+- Ignore Towncrier guide and marker files in PR news checks, reject malformed fragment suffixes, and report unsupported
+  Towncrier layouts clearly ([#18](https://github.com/tox-dev/release-creator/pull/18)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+- Reject unknown files and renamed fragments in PR news checks while ignoring editor backup files
+  ([#18](https://github.com/tox-dev/release-creator/pull/18)) by [@gaborbernat](https://github.com/gaborbernat).
+- Resolve fragment pull requests in bounded batches, reject unmerged numbered requests, and credit deleted GitHub
+  accounts as `ghost` ([#18](https://github.com/tox-dev/release-creator/pull/18)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+
 <a name="release-0-6-0"></a>
 
 ## 0.6.0 (2026-10-23)
