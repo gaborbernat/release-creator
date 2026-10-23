@@ -8,20 +8,16 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    uses: tox-dev/github-workflows/.github/workflows/validate-python-release.yaml@801969505384f96d16882e224e98a74bffd09d21 # v0.4.1
+    uses: tox-dev/github-workflows/.github/workflows/validate-python-release.yaml@0b37116dc986ac75b79e579dc69dd744eb94e6d4 # v1.0.0
     permissions:
       contents: read
-    with:
-      changelog: docs/changelog.rst
-      artifact-base-url: https://pypi.org/project/release-creator/
-      local-tool-source: true
   previous:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
       tag: ${{ steps.tag.outputs.previous }}
-      commit: ${{ steps.commit.outputs.sha }}
+      commit: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,7 +28,7 @@ jobs:
           version: latest-known
           python-version: "3.15"
           enable-cache: false
-      - uses: tox-dev/github-workflows/install-locked-tools@801969505384f96d16882e224e98a74bffd09d21 # v0.4.1
+      - uses: tox-dev/github-workflows/install-locked-tools@0b37116dc986ac75b79e579dc69dd744eb94e6d4 # v1.0.0
         with:
           groups: project-runtime
           venv: ${{ runner.temp }}/release-tools
@@ -44,11 +40,6 @@ jobs:
           previous=$(git tag --list | PYTHONPATH=src "$RUNNER_TEMP/release-tools/bin/python" \
             -m release_creator tags "$TAG" --previous)
           echo "previous=$previous" >>"$GITHUB_OUTPUT"
-      - id: commit
-        name: Resolve tagged commit
-        env:
-          TAG: ${{ github.ref_name }}
-        run: echo "sha=$(git rev-parse "${TAG}^{commit}")" >>"$GITHUB_OUTPUT"
   contributors:
     needs: previous
     runs-on: ubuntu-26.04
@@ -72,14 +63,14 @@ jobs:
           path: ${{ runner.temp }}/generated-notes.md
           if-no-files-found: error
   notes:
-    needs: [build, contributors]
+    needs: [build, contributors, previous]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -105,7 +96,7 @@ jobs:
           version: latest-known
           python-version: "3.15"
           enable-cache: false
-      - uses: tox-dev/github-workflows/install-locked-tools@801969505384f96d16882e224e98a74bffd09d21 # v0.4.1
+      - uses: tox-dev/github-workflows/install-locked-tools@0b37116dc986ac75b79e579dc69dd744eb94e6d4 # v1.0.0
         with:
           groups: release-notes project-runtime
           venv: ${{ runner.temp }}/release-tools
@@ -114,9 +105,10 @@ jobs:
         run: |
           uv pip install --python "$RUNNER_TEMP/release-tools/bin/python" --no-deps dist/release_creator-*.whl
           echo "$RUNNER_TEMP/release-tools/bin" >>"$GITHUB_PATH"
-      - uses: tox-dev/github-workflows/render-release-notes@801969505384f96d16882e224e98a74bffd09d21 # v0.4.1
+      - uses: tox-dev/github-workflows/render-release-notes@0b37116dc986ac75b79e579dc69dd744eb94e6d4 # v1.0.0
         with:
           tag: ${{ github.ref_name }}
+          previous: ${{ needs.previous.outputs.tag }}
           changelog: docs/changelog.rst
           artifact-url: https://pypi.org/project/release-creator/${{ github.ref_name }}/
           generated-notes: ${{ runner.temp }}/generated-notes.md
@@ -163,7 +155,7 @@ jobs:
         with:
           name: python-package-distributions
           path: dist
-      - uses: tox-dev/github-workflows/reconcile-pypi-artifacts@801969505384f96d16882e224e98a74bffd09d21 # v0.4.1
+      - uses: tox-dev/github-workflows/reconcile-pypi-artifacts@0b37116dc986ac75b79e579dc69dd744eb94e6d4 # v1.0.0
         with:
           project: release-creator
           version: ${{ github.ref_name }}
@@ -179,7 +171,7 @@ jobs:
         with:
           name: final-github-release-notes
           path: ${{ runner.temp }}
-      - uses: tox-dev/github-workflows/publish-github-release@801969505384f96d16882e224e98a74bffd09d21 # v0.4.1
+      - uses: tox-dev/github-workflows/publish-github-release@0b37116dc986ac75b79e579dc69dd744eb94e6d4 # v1.0.0
         env:
           GH_TOKEN: ${{ github.token }}
         with:

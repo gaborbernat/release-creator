@@ -11,7 +11,7 @@ lazy from typing import Final, Literal
 lazy from release_creator.fragments.knope import changeset_parts
 lazy from release_creator.fragments.names import fragment_number, pending_changesets, pending_fragments
 lazy from release_creator.fragments.pull_requests import PullRequest, PullRequestAuthor
-lazy from release_creator.github import MARKDOWN_AUTHOR, validate_repository
+lazy from release_creator.github import MARKDOWN_AUTHOR
 
 _RE_PULL_REQUEST_LINK: Final = re.compile(
     r"""
@@ -49,7 +49,6 @@ def add_pull_request_links(
     mode: _LinkMode = "towncrier",
 ) -> None:
     """Keep fragment links and credits tied to their introducing pull requests."""
-    validate_repository(repository)
     updates: list[tuple[Path, str]] = [
         (
             fragment,
@@ -140,6 +139,11 @@ def _has_pull_request_link(content: str, repository: str, number: str) -> bool:
 def _append_pull_request_link(content: str, target: _LinkTarget, author: str | None) -> str:
     link = _pull_request_link(target.repository, target.number, target.fragment.suffix)
     before, after = _split_trailing_code(content, target.fragment.suffix)
+    if not before:
+        suffix = f"{link}"
+        if author is not None:
+            suffix += f" by {_author_credit(author, target.fragment.suffix)}"
+        return f"{after.rstrip()}\n\n{suffix}{'' if target.knope else '.'}"
     content = f"{before.removesuffix('.')} {link}"
     if author is not None:
         content += f" by {_author_credit(author, target.fragment.suffix)}"
@@ -148,28 +152,73 @@ def _append_pull_request_link(content: str, target: _LinkTarget, author: str | N
 
 def _split_trailing_code(content: str, suffix: str) -> tuple[str, str]:
     lines = content.splitlines(keepends=True)
-    if suffix == ".md" and lines and (closing := lines[-1].strip()).startswith(("```", "~~~")):
-        minimum_fence_length: Final = 3
-        fence = closing[0] * minimum_fence_length
-        if closing == closing[0] * len(closing) and len(closing) >= minimum_fence_length:
-            opening = next(
-                (index for index in range(len(lines) - 2, -1, -1) if lines[index].strip().startswith(fence)),
-                None,
-            )
-            if opening is not None:
-                position = sum(map(len, lines[:opening]))
-                before = content[:position].rstrip()
-                return before, content[len(before) :]
-    if suffix == ".rst":
+    if suffix == ".md" and (opening := _final_fence_opening(lines)) is not None:
+        position = sum(map(len, lines[:opening]))
+        before = content[:position].rstrip()
+        return before, content[len(before) :]
+    if suffix == ".md":
         opening = next(
-            (index for index in range(len(lines) - 1, -1, -1) if lines[index].lstrip().startswith(".. code-block::")),
+            (
+                index
+                for index in range(len(lines) - 1, -1, -1)
+                if lines[index].strip() and not lines[index].startswith("    ")
+            ),
             None,
         )
-        if opening is not None and all(not line.strip() or line.startswith(" ") for line in lines[opening + 1 :]):
-            position = sum(map(len, lines[:opening]))
+        if (
+            opening is None
+            and any(line.strip() for line in lines)
+            and all(not line.strip() or line.startswith("    ") for line in lines)
+        ):
+            return "", content
+        if (
+            opening is not None
+            and opening < len(lines) - 2
+            and not lines[opening + 1].strip()
+            and all(not line.strip() or line.startswith("    ") for line in lines[opening + 2 :])
+        ):
+            position = sum(map(len, lines[: opening + 1]))
             before = content[:position].rstrip()
             return before, content[len(before) :]
+    if suffix == ".rst" and (opening := _trailing_rst_code_opening(lines)) is not None:
+        position = sum(map(len, lines[:opening]))
+        before = content[:position].rstrip()
+        return before, content[len(before) :]
     return content, ""
+
+
+def _trailing_rst_code_opening(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if not (
+            stripped.startswith((".. code-block::", ".. code::", ".. sourcecode::")) or stripped.rstrip().endswith("::")
+        ):
+            continue
+        body = [following for following in lines[index + 1 :] if following.strip()]
+        if body and all(_indent_width(following) > _indent_width(line) for following in body):
+            return index
+    return None
+
+
+def _indent_width(line: str) -> int:
+    expanded = line.expandtabs()
+    return len(expanded) - len(expanded.lstrip())
+
+
+def _final_fence_opening(lines: list[str]) -> int | None:
+    fence: tuple[int, str, int] | None = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith(("```", "~~~")):
+            continue
+        width = len(stripped) - len(stripped.lstrip(stripped[0]))
+        if fence is None:
+            fence = index, stripped[0], width
+        elif stripped == fence[1] * len(stripped) and width >= fence[2]:
+            if index == len(lines) - 1:
+                return fence[0]
+            fence = None
+    return None
 
 
 def _pull_request_link(repository: str, number: str, extension: str) -> str:

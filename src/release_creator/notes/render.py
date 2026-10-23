@@ -14,11 +14,18 @@ lazy from release_creator.anchors.names import release_anchor
 lazy from release_creator.categories import RELEASE_CATEGORIES
 lazy from release_creator.github import MARKDOWN_AUTHOR, validate_repository
 lazy from release_creator.notes.rst import render_rst_section
-lazy from release_creator.package_name import valid_package_name
 
 _RE_RELEASE_PULL: Final = re.compile(
     r"""
-    https://github\.com/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+)  # PR link
+    https://github\.com/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+)  # PR URL
+    """,
+    re.VERBOSE,
+)
+_RE_MARKDOWN_PULL_LABEL: Final = re.compile(
+    r"""
+    \[\#(?P<label>\d+)\]\(  # Displayed PR number
+    https://github\.com/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+)  # URL number
+    \)
     """,
     re.VERBOSE,
 )
@@ -199,23 +206,44 @@ def _generated_pr_authors(generated_notes: str, repository: str) -> tuple[dict[s
 def _release_entries(notes: str, repository: str) -> dict[str, list[tuple[set[str], bool]]]:
     entries: dict[str, list[tuple[set[str], bool]]] = {}
     for line in notes.splitlines():
-        pull_requests = [
-            match["number"] for match in _RE_RELEASE_PULL.finditer(line) if match["repository"] == repository
-        ]
-        if not pull_requests:
+        references = _pull_references(line, repository)
+        if not references:
             continue
-        credit_text = _RE_GITHUB_CREDIT.search(line, max(match.end() for match in _RE_RELEASE_PULL.finditer(line)))
-        handles = (
-            {match["handle"] for match in _RE_GITHUB_HANDLE.finditer(credit_text["credits"])}
-            if credit_text is not None
-            else set()
-        )
-        for number in pull_requests:
-            entries.setdefault(number, []).append((
-                handles,
-                credit_text is not None,
-            ))
+        initial_credit = _entry_credit(line[: references[0].start()], named=False)
+        pending: list[re.Match[str]] = []
+        for index, reference in enumerate(references):
+            pending.append(reference)
+            following = line[reference.end() : references[index + 1].start() if index + 1 < len(references) else None]
+            if (credit := _entry_credit(following, named=True)) is not None:
+                for item in pending:
+                    entries.setdefault(item["number"], []).append(credit)
+                pending.clear()
+            elif index + 1 < len(references) and ";" in following:
+                for item in pending:
+                    entries.setdefault(item["number"], []).append(initial_credit or (set(), False))
+                pending.clear()
+        for item in pending:
+            entries.setdefault(item["number"], []).append(
+                initial_credit if len(pending) == len(references) and initial_credit is not None else (set(), False)
+            )
     return entries
+
+
+def _pull_references(line: str, repository: str) -> list[re.Match[str]]:
+    for label in _RE_MARKDOWN_PULL_LABEL.finditer(line):
+        if label["repository"] == repository and label["label"] != label["number"]:
+            msg = f"pull request label #{label['label']} points to #{label['number']}"
+            raise ValueError(msg)
+    return [match for match in _RE_RELEASE_PULL.finditer(line) if match["repository"] == repository]
+
+
+def _entry_credit(text: str, *, named: bool) -> tuple[set[str], bool] | None:
+    if (marker := _RE_GITHUB_CREDIT.search(text)) is None:
+        return None
+    credit_text = str(marker.group("credits"))
+    handles = {str(match.group("handle")) for match in _RE_GITHUB_HANDLE.finditer(credit_text)}
+    plain_name = credit_text.strip(" .()")
+    return handles, bool(handles) or (named and len(plain_name.split()) > 1 and plain_name.istitle())
 
 
 def _new_contributors(generated_notes: str, context: ReleaseContext) -> str:
@@ -316,13 +344,9 @@ def _validate_context(context: ReleaseContext) -> None:
     ):
         msg = f"invalid previous tag: {context.previous}"
         raise ValueError(msg)
-    if context.package is not None:
-        if not valid_package_name(context.package):
-            msg = f"invalid package: {context.package}"
-            raise ValueError(msg)
-        if "/" in context.tag and not context.tag.startswith(f"{context.package}/"):
-            msg = f"release tag does not match package: {context.tag}"
-            raise ValueError(msg)
+    if context.package is not None and "/" in context.tag and not context.tag.startswith(f"{context.package}/"):
+        msg = f"release tag does not match package: {context.tag}"
+        raise ValueError(msg)
     validate_repository(context.repository)
     if context.artifact_url is not None and not context.artifact_url.startswith("https://"):
         msg = "artifact URL must use HTTPS"

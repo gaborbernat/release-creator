@@ -289,6 +289,143 @@ def test_render_markdown_cross_checks_pull_request_authors() -> None:
     assert "by @alice" in result
 
 
+def test_render_rst_checks_credit_before_pull_request() -> None:
+    changelog = "1.2.3 (2026-10-23)\n==================\n\nAdded\n-----\n\n- Patch by :user:`alice`. (:pr:`42`)\n"
+    generated = "* Patch by @alice in https://github.com/tox-dev/example/pull/42\n"
+
+    result = render_rst(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert "Patch by @alice. ([#42](https://github.com/tox-dev/example/pull/42))" in result
+
+
+def test_render_markdown_checks_shared_credit_for_multiple_pull_requests() -> None:
+    changelog = (
+        "## 1.2.3 (today)\n\n### Added\n\n"
+        "- Add support ([#42](https://github.com/tox-dev/example/pull/42)), "
+        "([#43](https://github.com/tox-dev/example/pull/43)) by @alice.\n"
+    )
+    generated = (
+        "* Add support by @alice in https://github.com/tox-dev/example/pull/42\n"
+        "* Refine support by @alice in https://github.com/tox-dev/example/pull/43\n"
+    )
+
+    result = render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert "([#43](https://github.com/tox-dev/example/pull/43)) by @alice" in result
+
+
+def test_render_markdown_scopes_distinct_credits_on_one_line() -> None:
+    changelog = (
+        "## 1.2.3 (today)\n\n### Added\n\n"
+        "- Add support ([#42](https://github.com/tox-dev/example/pull/42)) by @alice; "
+        "refine it ([#43](https://github.com/tox-dev/example/pull/43)) by @bob.\n"
+    )
+    generated = (
+        "* Add support by @alice in https://github.com/tox-dev/example/pull/42\n"
+        "* Refine support by @bob in https://github.com/tox-dev/example/pull/43\n"
+    )
+
+    result = render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert "[#42](https://github.com/tox-dev/example/pull/42)) by @alice" in result
+    assert "[#43](https://github.com/tox-dev/example/pull/43)) by @bob" in result
+
+
+def test_render_markdown_scopes_credit_before_first_pull_request() -> None:
+    changelog = (
+        "## 1.2.3 (today)\n\n### Added\n\n"
+        "- Add support by @alice ([#42](https://github.com/tox-dev/example/pull/42)); "
+        "refine it ([#43](https://github.com/tox-dev/example/pull/43)) by @bob.\n"
+    )
+    generated = (
+        "* Add support by @alice in https://github.com/tox-dev/example/pull/42\n"
+        "* Refine support by @bob in https://github.com/tox-dev/example/pull/43\n"
+    )
+
+    result = render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert (
+        "- Add support by @alice ([#42](https://github.com/tox-dev/example/pull/42)); "
+        "refine it ([#43](https://github.com/tox-dev/example/pull/43)) by @bob."
+    ) in result
+
+
+def test_render_markdown_shares_credit_before_paired_pull_requests() -> None:
+    changelog = (
+        "## 1.2.3 (today)\n\n### Added\n\n"
+        "- Add support by @alice ([#42](https://github.com/tox-dev/example/pull/42)), "
+        "([#43](https://github.com/tox-dev/example/pull/43)).\n"
+    )
+    generated = (
+        "* Add support by @alice in https://github.com/tox-dev/example/pull/42\n"
+        "* Refine support by @alice in https://github.com/tox-dev/example/pull/43\n"
+    )
+
+    result = render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+    assert (
+        "- Add support by @alice ([#42](https://github.com/tox-dev/example/pull/42)), "
+        "([#43](https://github.com/tox-dev/example/pull/43))."
+    ) in result
+
+
+def test_render_markdown_does_not_share_credit_past_its_reference() -> None:
+    changelog = (
+        "## 1.2.3 (today)\n\n### Added\n\n"
+        "- Add support ([#42](https://github.com/tox-dev/example/pull/42)) by @alice; "
+        "refine it ([#43](https://github.com/tox-dev/example/pull/43)).\n"
+    )
+    generated = (
+        "* Add support by @alice in https://github.com/tox-dev/example/pull/42\n"
+        "* Refine support by @bob in https://github.com/tox-dev/example/pull/43\n"
+    )
+
+    with pytest.raises(ValueError, match="pull request #43 does not include @bob"):
+        render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        pytest.param("https://github.com/tox-dev/example/pull/42", id="bare-url"),
+        pytest.param("[PR 42](https://github.com/tox-dev/example/pull/42)", id="other-link-label"),
+    ],
+)
+def test_render_markdown_checks_noncanonical_pull_references(reference: str) -> None:
+    changelog = f"## 1.2.3 (today)\n\n### Added\n\n- Add support {reference} by @bob.\n"
+    generated = "* Add support by @alice in https://github.com/tox-dev/example/pull/42\n"
+
+    with pytest.raises(ValueError, match="pull request #42 does not include @alice"):
+        render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+
+def test_render_markdown_rejects_mismatched_pull_link_number() -> None:
+    changelog = (
+        "## 1.2.3 (today)\n\n### Added\n\n- Add support [#1](https://github.com/tox-dev/example/pull/2) by @alice.\n"
+    )
+
+    with pytest.raises(ValueError, match="pull request label #1 points to #2"):
+        render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), "")
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        pytest.param("Group results by Python version {link}.", id="before-link"),
+        pytest.param("Group results {link} by Python version.", id="after-link"),
+    ],
+)
+def test_render_markdown_does_not_treat_capitalized_prose_as_credit(entry: str) -> None:
+    changelog = (
+        "## 1.2.3 (today)\n\n### Added\n\n- "
+        f"{entry.format(link='([#42](https://github.com/tox-dev/example/pull/42))')}\n"
+    )
+    generated = "* Group results in https://github.com/tox-dev/example/pull/42\n"
+
+    with pytest.raises(ValueError, match="no credit for pull request #42 with an unavailable author"):
+        render_markdown(changelog, ReleaseContext(tag="1.2.3", repository="tox-dev/example"), generated)
+
+
 def test_render_markdown_ignores_pull_links_inside_generated_titles() -> None:
     changelog = dedent("""\
         ## 1.2.3 (today)
@@ -386,6 +523,13 @@ def test_render_rst_rejects_uncredited_entry_with_unavailable_generated_author()
             "* Add a feature by @alice in https://github.com/tox-dev/example/pull/42\n",
             "does not include @alice",
             id="missing-changelog-credit",
+        ),
+        pytest.param(
+            "## 1.2.3 (today)\n\n### Added\n\n"
+            "- Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by default.\n",
+            "* Add a feature in https://github.com/tox-dev/example/pull/42\n",
+            "no credit for pull request #42",
+            id="ambiguous-ghost-credit",
         ),
         pytest.param(
             "## 1.2.3 (today)\n\n### Added\n\n- Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
@@ -1280,7 +1424,6 @@ def test_render_rst_rejects_invalid_input(changelog: str, message: str) -> None:
     [
         pytest.param("## 1.2.3 (today)\n", {"tag": "bad//tag"}, "invalid release tag", id="tag"),
         pytest.param("## 1.2.3 (today)\n", {"previous": "bad//tag"}, "invalid previous tag", id="previous"),
-        pytest.param("## 1.2.3 (today)\n", {"package": "bad/name"}, "invalid package", id="package"),
         pytest.param(
             "## 1.2.3 (today)\n",
             {"tag": "other/1.2.3", "package": "example"},
