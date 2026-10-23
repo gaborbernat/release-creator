@@ -2,6 +2,65 @@
 
 <!-- towncrier release notes start -->
 
+<a name="release-0-6-0"></a>
+
+## 0.6.0 (2026-10-23)
+
+<a name="release-0-6-0-added"></a>
+
+### Added
+
+- Link named changelog fragments to squash-merged pull requests and verified human authors using Git history and GitHub
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+- Render reStructuredText changelog entries as Markdown GitHub Release notes while preserving links and author credits
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+- Return verified PyPI file URLs for trusted-publisher attestation after comparing the complete published release with
+  local distributions ([#14](https://github.com/tox-dev/release-creator/pull/14)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+
+<a name="release-0-6-0-changes"></a>
+
+### Changes
+
+- Read fragment provenance from Git without `--git` or `--commit-map`; use Nab in place of the removed `locks` and
+  `build-constraints` commands ([#14](https://github.com/tox-dev/release-creator/pull/14)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+
+<a name="release-0-6-0-fixed"></a>
+
+### Fixed
+
+- Accept canonical prerelease, postrelease and development tags, and use PEP 440 order when selecting previous releases
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+- Finalize a matching prerelease before applying the next version bump
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+- Fix pull request lookup for named changelog fragments during release preparation
+  ([#16](https://github.com/tox-dev/release-creator/pull/16)) by [@gaborbernat](https://github.com/gaborbernat).
+- Preview standard Knope changesets without extra section configuration
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+- Read Towncrier defaults and validate fragments from project subdirectories
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+- Reject changelog fragments with the wrong file extension before release
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+- Reject shallow Git histories when attributing changelog fragments to pull requests
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+- Skip non-Python hook dependencies when refreshing pre-commit pins
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+
+<a name="release-0-6-0-security"></a>
+
+### Security
+
+- Use the final credit in generated GitHub notes when a pull request title contains a forged credit
+  ([#14](https://github.com/tox-dev/release-creator/pull/14)) by [@gaborbernat](https://github.com/gaborbernat).
+
+<a name="release-0-6-0-packaging"></a>
+
+### Packaging
+
+- Include the MIT license file in wheel metadata ([#14](https://github.com/tox-dev/release-creator/pull/14)) by
+  [@gaborbernat](https://github.com/gaborbernat).
+
 <a name="release-0-5-1"></a>
 
 ## 0.5.1 (2026-10-22)
