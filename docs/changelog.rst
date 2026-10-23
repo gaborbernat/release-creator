@@ -3,6 +3,19 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-0-6-2:
+
+0.6.2 (2026-10-23)
+==================
+
+.. _release-0-6-2-documentation:
+
+Documentation
+-------------
+
+- Keep the release-creator documentation site and its versioned changelog in reStructuredText (:pr:`19`) by
+  :user:`gaborbernat`.
+
 .. _release-0-6-1:
 
 0.6.1 (2026-10-23)
