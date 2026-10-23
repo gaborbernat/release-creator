@@ -3,6 +3,29 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-0-6-4:
+
+0.6.4 (2026-10-23)
+------------------
+
+.. _release-0-6-4-changes:
+
+Changes
+~~~~~~~
+
+- Remove unused artifact reconciliation, package changelog preview, stable-tag filtering, and numbered-PR fragment
+  options (:pr:`22`) by :user:`gaborbernat`.
+
+.. _release-0-6-4-fixed:
+
+Fixed
+~~~~~
+
+- Keep hook dependency pins with their own hook when the pre-commit configuration uses block or flow YAML, and resolve
+  ranged root requirements (:pr:`22`) by :user:`gaborbernat`.
+- Match contributor credits to the final pull request on each generated-notes line, escape RST text in GitHub Markdown,
+  and place fragment links outside trailing code blocks (:pr:`22`) by :user:`gaborbernat`.
+
 .. _release-0-6-3:
 
 0.6.3 (2026-10-23)
