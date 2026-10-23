@@ -3,6 +3,28 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-0-6-5:
+
+0.6.5 (2026-10-23)
+------------------
+
+.. _release-0-6-5-changes:
+
+Changes
+~~~~~~~
+
+- Accept a symlinked plugin archive when its ZIP members match the Marketplace upload (:pr:`25`) by :user:`gaborbernat`.
+
+.. _release-0-6-5-fixed:
+
+Fixed
+~~~~~
+
+- Keep fragment links outside trailing Markdown and RST code blocks (:pr:`25`) by :user:`gaborbernat`.
+- Keep frozen hook dependency pins attached to the correct hook across YAML styles (:pr:`25`) by :user:`gaborbernat`.
+- Reject GitHub release notes whose pull request credits do not match the merged authors (:pr:`25`) by
+  :user:`gaborbernat`.
+
 .. _release-0-6-4:
 
 0.6.4 (2026-10-23)
