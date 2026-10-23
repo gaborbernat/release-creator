@@ -3,6 +3,19 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-0-6-6:
+
+0.6.6 (2026-10-23)
+------------------
+
+.. _release-0-6-6-fixed:
+
+Fixed
+~~~~~
+
+- Restore draft changelog pages for repositories with several packages in one Markdown changelog (:pr:`26`) by
+  :user:`gaborbernat`.
+
 .. _release-0-6-5:
 
 0.6.5 (2026-10-23)
