@@ -1,5 +1,6 @@
 """Run local tools with captured UTF-8 output."""
 
+lazy import shlex
 lazy import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Callers pass argument lists without a shell.
 lazy from pathlib import Path
 
@@ -20,6 +21,7 @@ def run_text(
             command,
             cwd=cwd,
             input=stdin,
+            stdin=subprocess.DEVNULL if stdin is None else None,
             capture_output=True,
             check=False,
             text=True,
@@ -27,7 +29,7 @@ def run_text(
             timeout=300,
         )
     except subprocess.TimeoutExpired as error:
-        msg = f"command timed out after 300 seconds: {command[0]}"
+        msg = f"command timed out after 300 seconds: {shlex.join(command)}"
         raise ValueError(msg) from error
 
 

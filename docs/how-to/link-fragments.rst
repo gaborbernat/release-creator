@@ -4,7 +4,8 @@
 
 ``fragments`` answers one question: which merged pull request introduced each changelog entry? Contributors can write
 ``+cache.bugfix.md`` before a pull request number exists. Run the command on the default branch after squash merge and
-before Towncrier consumes the fragments.
+before Towncrier consumes the fragments. Merge and rebase merges are unsupported because their introducing commit does
+not identify one squash-merged PR.
 
 What the command changes
 ========================
@@ -127,4 +128,4 @@ belongs to PR #12. Named fragments still use their introducing commits. Leave th
 name issues; it does not apply to Knope changesets.
 
 Use ``--directory`` if the fragments are outside ``changelog.d``. Fetch Git history for every pending fragment before
-running the linker; a shallow checkout that predates an introducing commit cannot resolve it.
+running the linker. Shallow checkouts are unsupported even when they contain the introducing commit.

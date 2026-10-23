@@ -29,17 +29,11 @@ def test_module_entrypoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caps
     assert "https://github.com/tox-dev/example/commits/1.2.3" in capsys.readouterr().out
 
 
-def test_source_imports_are_lazy_unless_used_at_import_time() -> None:
+def test_source_imports_are_lazy() -> None:
     source = Path(__file__).resolve().parents[2] / "src"
     for path in source.rglob("*.py"):
-        imports = (
-            node
-            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-            if isinstance(node, (ast.Import, ast.ImportFrom))
-        )
+        module = ast.parse(path.read_text(encoding="utf-8"))
+        imports = (node for node in ast.walk(module) if isinstance(node, (ast.Import, ast.ImportFrom)))
         assert all(
-            node.is_lazy
-            or (isinstance(node, ast.ImportFrom) and node.module in {"__future__", "dataclasses"})
-            or (isinstance(node, ast.Import) and all(alias.name == "re" for alias in node.names))
-            for node in imports
+            node.is_lazy or (isinstance(node, ast.ImportFrom) and node.module == "__future__") for node in imports
         ), path
