@@ -3,6 +3,19 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-0-6-3:
+
+0.6.3 (2026-10-23)
+------------------
+
+.. _release-0-6-3-changes:
+
+Changes
+~~~~~~~
+
+- Show Full Changelog as a named link in GitHub Release notes and keep release headings nested in the Sphinx changelog
+  (:pr:`21`) by :user:`gaborbernat`.
+
 .. _release-0-6-2:
 
 0.6.2 (2026-10-23)
