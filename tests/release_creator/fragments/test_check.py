@@ -9,7 +9,7 @@ import pytest
 lazy from pytest_mock import MockerFixture
 
 from release_creator.cli import main
-from release_creator.fragments.check import changed_changesets, changed_fragments
+from release_creator.fragments.check import changed_changesets, changed_fragments, validate_fragment_deletions
 
 
 def _git(*args: str) -> None:
@@ -41,16 +41,26 @@ def news_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         pytest.param("+topic.feature.md", "Add a feature.\n", 1, "", id="named"),
         pytest.param("42.feature.md", "Add a feature.\n", 1, "", id="numbered"),
         pytest.param("+topic.feature.1.md", "Add a feature.\n", 1, "", id="multiple-entries"),
+        pytest.param("42.feature.2.md", "Add a feature.\n", 1, "", id="numbered-counter"),
         pytest.param("+topic.doc.md", "Add a feature.\n", 0, "unsupported changelog fragment", id="category"),
         pytest.param("topic.feature.md", "Add a feature.\n", 0, "unsupported changelog fragment", id="name"),
         pytest.param("+topic.feature.md", " \n", 0, "empty changelog fragment", id="empty"),
         pytest.param("README.md", "Read me.\n", 0, "", id="outside-directory"),
-        pytest.param("+.md", "Uncategorized.\n", 0, "", id="incomplete-name"),
-        pytest.param("+topic.feature.rst", "Add a feature.\n", 0, "", id="wrong-extension"),
+        pytest.param("nested/+topic.feature.md", "Nested.\n", 0, "", id="nested-directory"),
+        pytest.param("notes.txt", "Other file.\n", 0, "", id="other-extension"),
+        pytest.param("+.md", "Uncategorized.\n", 0, "unsupported changelog fragment", id="incomplete-name"),
+        pytest.param(
+            "+topic.feature.rst",
+            "Add a feature.\n",
+            0,
+            "unsupported changelog fragment extension",
+            id="wrong-extension",
+        ),
     ],
 )
 def test_changed_fragments(news_repository: Path, filename: str, content: str, count: int, error: str) -> None:
     destination = news_repository / (filename if filename == "README.md" else f"changelog.d/{filename}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(content, encoding="utf-8")
     _git("add", ".")
     _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
@@ -82,6 +92,137 @@ def test_changed_fragments_requires_git(news_repository: Path, mocker: MockerFix
 
     with pytest.raises(FileNotFoundError, match="Git is required"):
         changed_fragments(news_repository / "pyproject.toml", "main")
+
+
+def test_changed_fragments_reads_towncrier_tables(news_repository: Path) -> None:
+    (news_repository / "towncrier.toml").write_text(
+        '[tool.towncrier]\ndirectory = "changelog.d"\nfilename = "CHANGELOG.md"\n'
+        '[tool.towncrier.fragment.change]\nname = "Changes"\n',
+        encoding="utf-8",
+    )
+    (news_repository / "changelog.d" / "+topic.change.2.md").write_text("Change behavior.\n", encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
+
+    assert changed_fragments(news_repository / "pyproject.toml", "main") == 1
+
+
+def test_changed_fragments_uses_towncrier_defaults(news_repository: Path) -> None:
+    (news_repository / "pyproject.toml").write_text('[tool.towncrier]\nname = "fixture"\n', encoding="utf-8")
+    (news_repository / "NEWS.rst").write_text("News\n====\n", encoding="utf-8")
+    directory = news_repository / "newsfragments"
+    directory.mkdir()
+    (directory / "42.feature.rst").write_text("Add defaults.\n", encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
+
+    assert changed_fragments(news_repository / "pyproject.toml", "main") == 1
+
+
+def test_changed_fragments_rejects_missing_towncrier_table(news_repository: Path) -> None:
+    (news_repository / "pyproject.toml").write_text('[project]\nname = "fixture"\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"missing \[tool.towncrier\]"):
+        changed_fragments(news_repository / "pyproject.toml", "main")
+
+
+def test_changed_fragments_from_subdirectory(news_repository: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = news_repository / "package"
+    directory = package / "changelog.d"
+    directory.mkdir(parents=True)
+    (package / "pyproject.toml").write_text(
+        '[tool.towncrier]\nname = "fixture"\ndirectory = "changelog.d"\n'
+        'filename = "CHANGELOG.md"\ntype = [{ directory = "feature", name = "Added" }]\n',
+        encoding="utf-8",
+    )
+    (package / "CHANGELOG.md").write_text("# Changelog\n", encoding="utf-8")
+    (directory / "+nested.feature.md").write_text("Add nested package.\n", encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
+    monkeypatch.chdir(package)
+
+    assert changed_fragments(Path("pyproject.toml"), "main") == 1
+
+
+def test_changed_fragments_rejects_towncrier_duplicate(news_repository: Path) -> None:
+    for filename in ("42.feature.md", "42.feature.0.md"):
+        (news_repository / "changelog.d" / filename).write_text("Add a feature.\n", encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
+
+    with pytest.raises(ValueError, match=r"multiple files for 42\.feature"):
+        changed_fragments(news_repository / "pyproject.toml", "main")
+
+
+@pytest.mark.parametrize(
+    ("filename", "valid"),
+    [
+        pytest.param("+topic.feature.md", True, id="named"),
+        pytest.param("42.feature.2.md", True, id="counter"),
+        pytest.param("topic.feature.md", False, id="unprefixed"),
+        pytest.param("42.other.md", False, id="unknown-category"),
+        pytest.param("template.jinja", False, id="template"),
+        pytest.param("nested/42.feature.md", False, id="nested"),
+        pytest.param("42.feature.rst", False, id="wrong-extension"),
+    ],
+)
+def test_validate_fragment_deletions(news_repository: Path, filename: str, valid: bool) -> None:
+    _stage_fragment_deletion(news_repository, filename)
+
+    if valid:
+        validate_fragment_deletions(news_repository / "pyproject.toml")
+    else:
+        with pytest.raises(ValueError, match="unsupported release fragment"):
+            validate_fragment_deletions(news_repository / "pyproject.toml")
+
+
+def test_validate_fragment_deletions_reads_towncrier_toml(news_repository: Path) -> None:
+    (news_repository / "towncrier.toml").write_text(
+        '[tool.towncrier]\ndirectory = "changelog.d"\nfilename = "CHANGELOG.md"\n'
+        '[tool.towncrier.fragment.change]\nname = "Changes"\n',
+        encoding="utf-8",
+    )
+    _stage_fragment_deletion(news_repository, "+topic.change.2.md")
+
+    validate_fragment_deletions(news_repository / "pyproject.toml")
+
+
+def test_validate_fragment_deletions_cli(news_repository: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stage_fragment_deletion(news_repository, "42.feature.md")
+    monkeypatch.setattr(sys, "argv", ["release-creator", "validate-fragment-deletions"])
+
+    main()
+
+
+def _stage_fragment_deletion(repository: Path, filename: str) -> None:
+    fragment = repository / "changelog.d" / filename
+    fragment.parent.mkdir(parents=True, exist_ok=True)
+    fragment.write_text("A change.\n", encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Add fragment")
+    fragment.unlink()
+    _git("add", "-u")
+
+
+def test_towncrier_check_rejects_unprefixed_fragment(news_repository: Path) -> None:
+    config = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    shutil.copyfile(config, news_repository / "pyproject.toml")
+    (news_repository / "docs").mkdir()
+    (news_repository / "docs" / "changelog.md").write_text("# Changelog\n", encoding="utf-8")
+    (news_repository / "changelog.d" / "topic.feature.md").write_text("Add a feature.\n", encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
+
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Installed CLI in a temporary repo.
+        [str(Path(sys.executable).with_name("towncrier")), "check", "--compare-with", "origin/main"],
+        cwd=news_repository,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Issue name 'topic' does not match the configured pattern" in result.stderr
 
 
 def test_changed_fragments_rejects_missing_base(news_repository: Path) -> None:

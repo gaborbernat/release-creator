@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+lazy from datetime import date
+lazy from pathlib import Path
 
-if TYPE_CHECKING:
-    from datetime import date
+lazy from packaging.version import InvalidVersion, Version
+
+lazy from release_creator.fragments.names import fragment_category
 
 
 def next_tag(bump: str, tags: list[str], fragments: list[str], release_date: date, prefix: str = "") -> str:
@@ -22,57 +24,71 @@ def next_tag(bump: str, tags: list[str], fragments: list[str], release_date: dat
     if not fragments:
         msg = "no changelog fragments to release"
         raise ValueError(msg)
-    versions: list[tuple[int, int, int]] = []
+    versions: list[Version] = []
     for tag in tags:
         try:
             versions.append(parse_tag(tag))
         except ValueError:
             continue
-    current = max(versions, default=(0, 0, 0))
+    current = max(versions, default=Version("0.0.0"))
     if bump == "auto":
-        bump = (
-            "major"
-            if any(fragment.endswith((".breaking.md", ".breaking.rst")) for fragment in fragments)
-            else "minor"
-            if any(fragment.endswith((".feature.md", ".feature.rst")) for fragment in fragments)
-            else "patch"
-        )
-    match bump:
-        case "major":
-            version = (current[0] + 1, 0, 0)
-        case "minor":
-            version = (current[0], current[1] + 1, 0)
-        case "patch":
-            version = (current[0], current[1], current[2] + 1)
-        case "calver":
-            year_month = release_date.year, release_date.month
-            version = (*year_month, current[2] + 1 if current[:2] == year_month else 0)
-        case _:
-            msg = f"unknown version bump: {bump}"
-            raise ValueError(msg)
-    if version <= current:
-        msg = f"calculated version must be newer than {'.'.join(map(str, current))}"
+        bump = _auto_bump(fragments)
+    if _finalizes_prerelease(current, bump):
+        return f"{prefix}{current.base_version}"
+    version = _bumped_release(current, bump, release_date)
+    if Version(".".join(map(str, version))) <= current:
+        msg = f"calculated version must be newer than {current}"
         raise ValueError(msg)
     return f"{prefix}{'.'.join(map(str, version))}"
 
 
-def previous_tag(tag: str, tags: list[str]) -> str | None:
+def _bumped_release(current: Version, bump: str, release_date: date) -> tuple[int, int, int]:
+    major, minor, patch = current.release
+    match bump:
+        case "major":
+            return major + 1, 0, 0
+        case "minor":
+            return major, minor + 1, 0
+        case "patch":
+            return major, minor, patch + 1
+        case "calver":
+            year_month = release_date.year, release_date.month
+            return *year_month, patch + 1 if (major, minor) == year_month else 0
+        case _:
+            msg = f"unknown version bump: {bump}"
+            raise ValueError(msg)
+
+
+def _auto_bump(fragments: list[str]) -> str:
+    categories = {fragment_category(Path(fragment)) for fragment in fragments}
+    return "major" if "breaking" in categories else "minor" if "feature" in categories else "patch"
+
+
+def _finalizes_prerelease(current: Version, bump: str) -> bool:
+    if not current.is_prerelease:
+        return False
+    _, minor, patch = current.release
+    return bump == "patch" or (bump == "minor" and patch == 0) or (bump == "major" and minor == patch == 0)
+
+
+def previous_tag(tag: str, tags: list[str], *, stable_only: bool = False) -> str | None:
     """Select the greatest numeric release tag before ``tag``.
 
     :param tag: Release tag whose predecessor is needed.
     :param tags: Existing repository tags.
+    :param stable_only: Exclude prerelease and postrelease tags.
     :returns: The preceding tag, or ``None`` when this is the first release.
     """
     target = parse_tag(tag)
-    candidates: list[tuple[tuple[int, int, int], str]] = []
+    candidates: list[tuple[Version, str]] = []
     for candidate in tags:
         try:
             version = parse_tag(candidate)
         except ValueError:
             continue
-        if version < target:
+        if version < target and (not stable_only or (not version.is_prerelease and not version.is_postrelease)):
             candidates.append((version, candidate))
-    return max(candidates, default=((), ""))[1] or None
+    return max(candidates)[1] if candidates else None
 
 
 def require_newer_tag(tag: str, tags: list[str]) -> None:
@@ -83,7 +99,7 @@ def require_newer_tag(tag: str, tags: list[str]) -> None:
     :raises ValueError: A matching or newer release tag already exists.
     """
     target = parse_tag(tag)
-    versions: list[tuple[int, int, int]] = []
+    versions: list[Version] = []
     for candidate in tags:
         try:
             versions.append(parse_tag(candidate))
@@ -94,16 +110,22 @@ def require_newer_tag(tag: str, tags: list[str]) -> None:
         raise ValueError(msg)
 
 
-def parse_tag(tag: str) -> tuple[int, int, int]:
+def parse_tag(tag: str) -> Version:
     """Parse a major.minor.patch release tag with an optional v prefix.
 
     :param tag: Version tag to parse.
-    :returns: The numeric major, minor, and patch components.
+    :returns: The canonical release version.
     :raises ValueError: The tag is not a numeric release version.
     """
-    match tag.removeprefix("v").split("."):
-        case [major, minor, patch] if all(part.isascii() and part.isdecimal() for part in (major, minor, patch)):
-            return int(major), int(minor), int(patch)
+    candidate = tag.removeprefix("v")
+    try:
+        version = Version(candidate)
+    except InvalidVersion as error:
+        msg = f"expected a major.minor.patch version with optional v prefix: {tag}"
+        raise ValueError(msg) from error
+    match version.release:
+        case [_, _, _] if str(version) == candidate and not version.epoch and version.local is None:
+            return version
         case _:
             msg = f"expected a major.minor.patch version with optional v prefix: {tag}"
             raise ValueError(msg)
