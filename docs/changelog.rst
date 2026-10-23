@@ -3,6 +3,23 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-0-6-7:
+
+0.6.7 (2026-10-23)
+------------------
+
+.. _release-0-6-7-fixed:
+
+Fixed
+~~~~~
+
+- Keep a pull request mentioned in prose from inheriting the author credit of a later pull request (:pr:`27`) by
+  :user:`gaborbernat`.
+- Reject unclosed Markdown code fences and keep indented fences from moving fragment links into code (:pr:`27`) by
+  :user:`gaborbernat`.
+- Report a missing Git, GitHub CLI, or uv executable by name instead of raising a type error (:pr:`27`) by
+  :user:`gaborbernat`.
+
 .. _release-0-6-6:
 
 0.6.6 (2026-10-23)
