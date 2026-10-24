@@ -3,6 +3,93 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-1-0-0:
+
+1.0.0 (2026-10-24)
+------------------
+
+.. _release-1-0-0-fixed:
+
+Fixed
+~~~~~
+
+- Accept trailing slashes and the ``www.github.com`` host in verified release-note author links (:pr:`29`) by
+  :user:`gaborbernat`.
+- Accept valid YAML comments and quoting in Knope changeset front matter during news validation (:pr:`29`) by
+  :user:`gaborbernat`.
+- Apply one author credit to adjacent pull request references separated by whitespace or semicolons (:pr:`29`) by
+  :user:`gaborbernat`.
+- Do not count reviewer mentions as pull request author credits (:pr:`29`) by :user:`gaborbernat`.
+- Escape URL punctuation when converting reStructuredText links to GitHub release Markdown (:pr:`29`) by
+  :user:`gaborbernat`.
+- Finalize a CalVer prerelease in the current month before incrementing its patch number (:pr:`29`) by
+  :user:`gaborbernat`.
+- Find the introducing commit for renamed fragments and fragments whose filenames contain non-ASCII characters
+  (:pr:`29`) by :user:`gaborbernat`.
+- Identify fragment commits by full path so nested files with the same name cannot change pull request attribution
+  (:pr:`29`) by :user:`gaborbernat`.
+- Ignore numeric fragments of unrelated bare URLs when checking release-note pull request credits (:pr:`29`) by
+  :user:`gaborbernat`.
+- Ignore pull request references inside code when linking changelog fragments (:pr:`29`) by :user:`gaborbernat`.
+- Keep a numbered issue in a changelog entry when its digits only appear as the start of a longer pull request number
+  (:pr:`29`) by :user:`gaborbernat`.
+- Keep direct dependencies in a flow-style list when a trailing comment contains the managed-pin marker (:pr:`29`) by
+  :user:`gaborbernat`.
+- Keep fenced package headings inside their changelog section and reject unsupported pending fragment files in
+  documentation previews (:pr:`29`) by :user:`gaborbernat`.
+- Keep generated hook dependency pins with a folded or literal dependency item when another YAML key follows it
+  (:pr:`29`) by :user:`gaborbernat`.
+- Keep literal tildes in reStructuredText changelog entries when rendering GitHub Markdown (:pr:`29`) by
+  :user:`gaborbernat`.
+- Leave fenced code examples unchanged when repairing Markdown release anchors (:pr:`29`) by :user:`gaborbernat`.
+- Match explicit GitHub author credits without case sensitivity and treat GitHub mannequin authors as unavailable
+  accounts (:pr:`29`) by :user:`gaborbernat`.
+- Pin ranged and unpinned Python hook dependencies before they run in release preparation. Preserve the caller's version
+  range across updates and reject YAML aliases that share an edited dependency list (:pr:`29`) by :user:`gaborbernat`.
+- Preserve comments on direct dependencies when updating a flow-style hook mapping (:pr:`29`) by :user:`gaborbernat`.
+- Preserve wrapped reStructuredText release notes and verify credits on short, repository-prefixed, and issue-form pull
+  request links. Ignore pull request syntax inside code spans and blocks when checking credits (:pr:`29`) by
+  :user:`gaborbernat`.
+- Reject misleading pull request labels and GitHub author links after resolving Markdown references and nested markup
+  (:pr:`29`) by :user:`gaborbernat`.
+- Reject raw HTML hyperlinks in release entries so an ``@handle`` credit cannot point to another person (:pr:`29`) by
+  :user:`gaborbernat`.
+- Reject release-note lines that embed markup inside a category anchor (:pr:`29`) by :user:`gaborbernat`.
+- Reject unsupported or empty changelog fragments in the pull request news check (:pr:`29`) by :user:`gaborbernat`.
+- Render package release anchors when the package name contains underscores (:pr:`29`) by :user:`gaborbernat`.
+- Require the merged pull request author in the fragment's author list; a later reviewer mention does not count as a
+  credit (:pr:`29`) by :user:`gaborbernat`.
+- Rerun eligible hook cooldown checks daily so an unchanged bot update can become mergeable after seven days (:pr:`29`)
+  by :user:`gaborbernat`.
+- Resolve Python hook dependencies for the manifest's ``language_version`` when the caller does not override it
+  (:pr:`29`) by :user:`gaborbernat`.
+- Resolve hook dependencies from PyPI even when the caller sets uv or pip index and resolver environment variables
+  (:pr:`29`) by :user:`gaborbernat`.
+- Stop package release notes at the next version anchor, even when the following heading is missing (:pr:`29`) by
+  :user:`gaborbernat`.
+
+.. _release-1-0-0-breaking-changes:
+
+Breaking changes
+~~~~~~~~~~~~~~~~
+
+- ``release-creator hooks`` now uses a seven-day package cutoff and each hook's configured Python version without
+  ``--exclude-newer`` or ``--python-version`` options (:pr:`29`) by :user:`gaborbernat`.
+
+.. _release-1-0-0-security:
+
+Security
+~~~~~~~~
+
+- Ignore inherited ``SSL_CERT_DIR`` and ``SSL_CLIENT_CERT`` when resolving hook pins from PyPI (:pr:`29`) by
+  :user:`gaborbernat`.
+- Reject YAML merge keys in hook definitions so shared dependencies cannot bypass exact pin updates (:pr:`29`) by
+  :user:`gaborbernat`.
+- Reject duplicate pre-commit YAML keys so effective hook dependencies cannot bypass cooldown and pin updates (:pr:`29`)
+  by :user:`gaborbernat`.
+- Reject repository-level YAML merge keys before refreshing hook pins, so a merged source cannot hide the hook package
+  (:pr:`29`) by :user:`gaborbernat`.
+
 .. _release-0-6-7:
 
 0.6.7 (2026-10-23)
