@@ -251,11 +251,16 @@ def test_validate_fragment_deletions_reads_towncrier_toml(news_repository: Path)
     validate_fragment_deletions(news_repository / "pyproject.toml")
 
 
-def test_validate_fragment_deletions_cli(news_repository: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _stage_fragment_deletion(news_repository, "42.feature.md")
+def test_validate_fragment_deletions_cli(
+    news_repository: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _stage_fragment_deletion(news_repository, "template.jinja")
     monkeypatch.setattr(sys, "argv", ["release-creator", "validate-fragment-deletions"])
 
-    main()
+    with pytest.raises(SystemExit, match="2"):
+        main()
+
+    assert "unsupported release fragment" in capsys.readouterr().err
 
 
 def _stage_fragment_deletion(repository: Path, filename: str) -> None:
@@ -312,7 +317,11 @@ def test_validate_news_cli_reports_count(
     [
         pytest.param("---\ndefault: security\n---\n\n# Remove a distrusted root\n", 1, "", id="custom-type"),
         pytest.param("---\ndefault: patch\n---\n\n# Fix a bug\n", 1, "", id="built-in-type"),
+        pytest.param("---\ndefault: patch # maintenance fix\n---\n\n# Fix a bug\n", 1, "", id="yaml-comment"),
         pytest.param("---\ndefault: unknown\n---\n\n# Fix a bug\n", 0, "unsupported changeset type", id="type"),
+        pytest.param(
+            "---\ndefault: [patch\n---\n\n# Fix a bug\n", 0, "invalid changeset front matter", id="invalid-yaml"
+        ),
         pytest.param("---\n---\n\n# Fix a bug\n", 0, "empty changeset front matter", id="empty-front-matter"),
         pytest.param("---\ndefault: patch\n---\n\n# \n", 0, "empty changeset summary", id="empty-summary"),
         pytest.param("Fix a bug\n", 0, "missing YAML front matter", id="missing-front-matter"),

@@ -8,6 +8,8 @@ lazy from dataclasses import dataclass
 lazy from pathlib import Path
 lazy from typing import Final, Literal
 
+lazy from markdown_it import MarkdownIt
+
 lazy from release_creator.fragments.knope import changeset_parts
 lazy from release_creator.fragments.names import fragment_number, pending_changesets, pending_fragments
 lazy from release_creator.fragments.pull_requests import PullRequest, PullRequestAuthor
@@ -34,7 +36,13 @@ _RE_RST_USER: Final = re.compile(
     :user:`(?P<handle>[A-Za-z0-9-]+)`  # RST GitHub user role
     |                                 # Or
     `@(?P<link_handle>[A-Za-z0-9-]+)  # Explicit profile link text
-    \ <https://github\.com/(?P=link_handle)>`_  # Matching profile URL
+    \ <https://(?:www\.)?github\.com/(?P=link_handle)/?>`_  # Matching profile URL
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+_RE_AUTHOR_SEPARATOR: Final = re.compile(
+    r"""
+    ^[ \t]*(?P<separator>,(?:[ \t]*and)?|and)[ \t]*  # Continue a shared author list
     """,
     re.VERBOSE,
 )
@@ -98,19 +106,20 @@ def _link_text(
     target: _LinkTarget,
 ) -> str:
     fragment = target.fragment
-    linked = _has_pull_request_link(content, target.repository, target.number)
+    linked = _has_pull_request_link(content, target.repository, target.number, fragment.suffix)
     if not target.knope and fragment_number(fragment) is None and linked:
         msg = f"pull request already linked in {fragment}"
         raise ValueError(msg)
     if (match := _RE_AUTHOR_MARKER.search(content)) is not None:
-        handles = _credited_handles(content[match.end() :], fragment.suffix)
+        handles = {handle.casefold() for handle in _credited_handles(content[match.end() :], fragment.suffix)}
+        handle = target.author.handle.casefold()
         if target.author.handle == "ghost":
             msg = f"cannot verify explicit credit for deleted pull request author in {fragment}"
             raise ValueError(msg)
-        if target.author.is_bot and target.author.handle in handles:
+        if target.author.is_bot and handle in handles:
             msg = f"bot author @{target.author.handle} must not be credited in {fragment}"
             raise ValueError(msg)
-        if not target.author.is_bot and target.author.handle not in handles:
+        if not target.author.is_bot and handle not in handles:
             msg = f"pull request author @{target.author.handle} is missing from the explicit credit in {fragment}"
             raise ValueError(msg)
         if linked:
@@ -129,11 +138,60 @@ def _link_text(
     return _append_pull_request_link(content, target, handle)
 
 
-def _has_pull_request_link(content: str, repository: str, number: str) -> bool:
+def _has_pull_request_link(content: str, repository: str, number: str, extension: str) -> bool:
     return any(
         (match["repository"] == repository and match["number"] == number) or match["rst_number"] == number
-        for match in _RE_PULL_REQUEST_LINK.finditer(content)
+        for text in (_markdown_prose(content) if extension == ".md" else _rst_prose(content))
+        for match in _RE_PULL_REQUEST_LINK.finditer(text)
     )
+
+
+def _markdown_prose(content: str) -> list[str]:
+    prose: list[str] = []
+    for token in MarkdownIt().parse(content):
+        for child in token.children or ():
+            if child.type in {"text", "html_inline"}:
+                prose.append(child.content)
+            elif child.type == "link_open" and isinstance(destination := child.attrGet("href"), str):
+                prose.append(destination)
+            elif child.type == "code_inline" and prose and prose[-1].endswith((":pr:", ":pull:")):
+                prose.append(f":pr:`{child.content}`")
+    return prose
+
+
+def _rst_prose(content: str) -> list[str]:
+    lines = content.splitlines()
+    code: set[int] = set()
+    prose: list[str] = []
+    for index, line in enumerate(lines):
+        if index in code:
+            continue
+        stripped = line.lstrip()
+        if not stripped.startswith((".. code-block::", ".. code::", ".. sourcecode::")):
+            prose.append(_without_rst_inline_literals(line))
+        if not (stripped.startswith((".. code-block::", ".. code::", ".. sourcecode::")) or stripped.endswith("::")):
+            continue
+        cursor = index + 1
+        while cursor < len(lines) and not lines[cursor].strip():
+            cursor += 1
+        if cursor >= len(lines) or _indent_width(lines[cursor]) <= _indent_width(line):
+            continue
+        while cursor < len(lines) and (not lines[cursor].strip() or _indent_width(lines[cursor]) > _indent_width(line)):
+            code.add(cursor)
+            cursor += 1
+    return prose
+
+
+def _without_rst_inline_literals(line: str) -> str:
+    parts: list[str] = []
+    start = 0
+    while (opening := line.find("``", start)) >= 0:
+        if (closing := line.find("``", opening + 2)) < 0:
+            break
+        parts.append(line[start:opening])
+        start = closing + 2
+    parts.append(line[start:])
+    return "".join(parts)
 
 
 def _append_pull_request_link(content: str, target: _LinkTarget, author: str | None) -> str:
@@ -236,9 +294,16 @@ def _author_credit(author: str, extension: str) -> str:
 
 
 def _credited_handles(credit_text: str, extension: str) -> set[str]:
-    if extension == ".rst":
-        return {author["handle"] or author["link_handle"] for author in _RE_RST_USER.finditer(credit_text)}
-    return {author["handle"] for author in MARKDOWN_AUTHOR.finditer(credit_text)}
+    pattern = _RE_RST_USER if extension == ".rst" else MARKDOWN_AUTHOR
+    remaining = credit_text.lstrip()
+    handles: set[str] = set()
+    while (author := pattern.match(remaining)) is not None:
+        handles.add(author["handle"] or author["link_handle"] if extension == ".rst" else author["handle"])
+        remaining = remaining[author.end() :]
+        if (separator := _RE_AUTHOR_SEPARATOR.match(remaining)) is None:
+            break
+        remaining = remaining[separator.end() :]
+    return handles
 
 
 def _pull_request_url(repository: str, number: str) -> str:

@@ -2,6 +2,7 @@
 
 lazy import json
 lazy import operator
+lazy import os
 lazy from pathlib import Path
 lazy from tempfile import TemporaryDirectory
 lazy from typing import Final, cast
@@ -33,25 +34,32 @@ def update_pins(config: Path, exclude_newer: str, python_version: str) -> None:
     root = _config_root(source)
     edits: list[_Edit] = []
     with TemporaryDirectory() as temporary:
-        packages, missing, python_groups = _hook_packages(root, Path(temporary), config.parent)
-        groups = _groups(source, root, python_groups)
+        version = _default_python_version(root, python_version)
+        packages, missing, python_groups = _hook_packages(root, Path(temporary), config.parent, version, python_version)
+        groups = _groups(source, root, set(python_groups))
         for group in groups:
             direct = group[2]
             package = packages.get(_start(group[0]))
             if direct or package is not None:
                 resolved = _resolve(
-                    [requirement for _, requirement in direct], config, exclude_newer, python_version, package
+                    [requirement for _, requirement in direct],
+                    config,
+                    exclude_newer,
+                    python_groups.get(_start(group[0]), version),
+                    package,
                 )
                 edits.extend(_group_edits(source, group, resolved))
             elif group[3]:
                 edits.extend(_group_edits(source, group, []))
-        for hook, package in missing:
-            resolved = _resolve([], config, exclude_newer, python_version, package)
+        for hook, package, hook_version in missing:
+            resolved = _resolve([], config, exclude_newer, hook_version, package)
             if resolved:
                 edits.append(_new_group_edit(source, hook, resolved))
+    _reject_shared_edits(root, edits)
     for start, end, replacement in sorted(edits, key=operator.itemgetter(0), reverse=True):
         source = f"{source[:start]}{replacement}{source[end:]}"
     if edits:
+        _config_root(source)
         config.write_bytes(source.replace("\n", newline).encode("utf-8"))
 
 
@@ -64,14 +72,79 @@ def _config_root(source: str) -> MappingNode:
     if not isinstance(root, MappingNode):
         msg = "pre-commit configuration must be a YAML mapping"
         raise TypeError(msg)
+    _reject_duplicate_keys(root)
     return root
+
+
+def _reject_duplicate_keys(root: MappingNode) -> None:
+    seen: set[int] = set()
+    pending: list[Node] = [root]
+    while pending:
+        node = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, MappingNode):
+            keys: set[str] = set()
+            for key, value in node.value:
+                if not isinstance(key, ScalarNode):
+                    msg = "pre-commit configuration keys must be YAML scalars"
+                    raise TypeError(msg)
+                if key.value in keys:
+                    msg = f"duplicate YAML key in pre-commit configuration: {key.value}"
+                    raise ValueError(msg)
+                keys.add(key.value)
+                pending.append(value)
+        elif isinstance(node, SequenceNode):
+            pending.extend(node.value)
+
+
+def _reject_shared_edits(root: MappingNode, edits: list[_Edit]) -> None:
+    seen: set[int] = set()
+    pending: list[Node] = [root]
+    while pending:
+        node = pending.pop()
+        if id(node) in seen:
+            shared = cast("MappingNode | ScalarNode | SequenceNode", node)
+            if any(start <= _end(shared) and _start(shared) <= end for start, end, _ in edits):
+                msg = "YAML aliases cannot be updated safely"
+                raise ValueError(msg)
+            continue
+        seen.add(id(node))
+        if isinstance(node, MappingNode):
+            pending.extend(child for pair in node.value for child in pair)
+        elif isinstance(node, SequenceNode):
+            pending.extend(node.value)
+
+
+def _default_python_version(root: MappingNode, fallback: str) -> str:
+    defaults = _mapping_value(root, "default_language_version")
+    override = _mapping_value(defaults, "python") if isinstance(defaults, MappingNode) else None
+    return _python_version(override, fallback)
+
+
+def _python_version(value: Node | str | None, fallback: str, system_version: str | None = None) -> str:
+    value = cast("str", value.value) if isinstance(value, ScalarNode) else value
+    if not isinstance(value, str) or value == "default":
+        return fallback
+    if value == "python3":
+        return system_version or fallback
+    version = value.removeprefix("python")
+    if version == value or not version.startswith("3."):
+        msg = f"unsupported Python hook language_version: {value}"
+        raise ValueError(msg)
+    return version
 
 
 def _groups(source: str, root: MappingNode, python_groups: set[int]) -> list[_Group]:
     groups: list[_Group] = []
     pending: list[MappingNode | SequenceNode | ScalarNode] = [root]
+    seen: set[int] = set()
     while pending:
         node = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
         if isinstance(node, MappingNode):
             for key, value in node.value:
                 if (
@@ -97,7 +170,9 @@ def _parse_group(
     managed: list[ScalarNode] = []
     for item in value.value:
         line_end = source.find("\n", _end(item))
-        if "# release-creator managed" in source[_end(item) : line_end if line_end >= 0 else len(source)]:
+        trailing = source[_end(item) : line_end if line_end >= 0 else len(source)]
+        before, marker, comment = trailing.partition("#")
+        if marker and comment.startswith(" release-creator managed") and not before.strip(" ,"):
             managed.append(item)
             continue
         try:
@@ -125,11 +200,11 @@ def _last_content_end(node: MappingNode | ScalarNode | SequenceNode) -> int:
 
 
 def _hook_packages(
-    root: MappingNode, temporary: Path, cwd: Path
-) -> tuple[dict[int, Path], list[tuple[MappingNode, Path]], set[int]]:
+    root: MappingNode, temporary: Path, cwd: Path, default_version: str, system_version: str
+) -> tuple[dict[int, Path], list[tuple[MappingNode, Path, str]], dict[int, str]]:
     packages: dict[int, Path] = {}
-    missing: list[tuple[MappingNode, Path]] = []
-    python_groups: set[int] = set()
+    missing: list[tuple[MappingNode, Path, str]] = []
+    python_groups: dict[int, str] = {}
     repositories = _mapping_value(root, "repos")
     if not isinstance(repositories, SequenceNode):
         return packages, missing, python_groups
@@ -137,37 +212,60 @@ def _hook_packages(
         if not isinstance(repository, MappingNode):
             msg = "hook repository must be a mapping"
             raise TypeError(msg)
+        _reject_repository_merge(repository)
         hooks = _mapping_value(repository, "hooks")
         if not isinstance(hooks, SequenceNode):
             msg = "hook repository must include hooks"
             raise TypeError(msg)
         checkout_and_hooks = _repository_checkout(repository, temporary / str(index), cwd)
         checkout = checkout_and_hooks[0] if checkout_and_hooks is not None else None
-        languages = (
+        manifest = (
             {
-                entry["id"]: entry["language"]
+                entry["id"]: entry
                 for entry in safe_load((checkout / ".pre-commit-hooks.yaml").read_text(encoding="utf-8"))
             }
             if checkout is not None
             else {}
         )
+        languages = {identifier: entry["language"] for identifier, entry in manifest.items()}
         for hook in hooks.value:
             if _hook_language(hook, languages, require_id=checkout is not None) not in {None, "python"}:
                 continue
             hook = cast("MappingNode", hook)
+            identifier = _mapping_value(hook, "id")
+            override = _mapping_value(hook, "language_version")
+            manifest_version = (
+                manifest.get(identifier.value, {}).get("language_version")
+                if isinstance(identifier, ScalarNode)
+                else None
+            )
+            version = _python_version(
+                override if override is not None else manifest_version,
+                default_version,
+                system_version,
+            )
             if isinstance(dependencies := _mapping_key(hook, "additional_dependencies"), ScalarNode):
-                python_groups.add(_start(dependencies))
+                python_groups[_start(dependencies)] = version
                 if checkout is not None:
                     packages[_start(dependencies)] = checkout
             elif checkout is not None:
-                missing.append((hook, checkout))
+                missing.append((hook, checkout, version))
     return packages, missing, python_groups
+
+
+def _reject_repository_merge(repository: MappingNode) -> None:
+    if any(isinstance(key, ScalarNode) and key.value == "<<" for key, _ in repository.value):
+        msg = "YAML merge keys in repository definitions cannot be updated safely"
+        raise ValueError(msg)
 
 
 def _hook_language(hook: Node, languages: dict[str, str], *, require_id: bool) -> str | None:
     if not isinstance(hook, MappingNode):
         msg = "selected hook must be a mapping with an id"
         raise TypeError(msg)
+    if any(isinstance(key, ScalarNode) and key.value == "<<" for key, _ in hook.value):
+        msg = "YAML merge keys in hook definitions cannot be updated safely"
+        raise ValueError(msg)
     identifier = _mapping_value(hook, "id")
     if require_id and not isinstance(identifier, ScalarNode):
         msg = "selected hook must be a mapping with an id"
@@ -239,6 +337,10 @@ def _resolve(
             "--quiet",
             "--no-header",
             "--no-annotate",
+            "--no-config",
+            "--no-sources",
+            "--default-index",
+            "https://pypi.org/simple/",
             "--exclude-newer",
             exclude_newer,
             "--python-version",
@@ -246,6 +348,12 @@ def _resolve(
         ],
         stdin=f"{editable}{root_lines}",
         cwd=config.parent,
+        env={
+            name: value
+            for name, value in os.environ.items()
+            if not name.startswith(("UV_", "PIP_"))
+            and name not in {"SSL_CERT_FILE", "SSL_CERT_DIR", "SSL_CLIENT_CERT", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"}
+        },
     )
     if result.returncode:
         msg = f"cannot resolve hook dependencies: {result.stderr.strip()}"
@@ -268,12 +376,16 @@ def _root_input(requirement: Requirement) -> str:
 
 
 def _exact_pin(requirement: Requirement) -> bool:
-    return len(requirement.specifier) == 1 and next(iter(requirement.specifier)).operator == "=="
+    return (
+        len(requirement.specifier) == 1
+        and (specifier := next(iter(requirement.specifier))).operator == "=="
+        and "*" not in specifier.version
+    )
 
 
 def _resolved_line(line: str) -> Requirement:
     requirement = Requirement(line)
-    if requirement.url is not None or not _exact_pin(requirement) or "*" in next(iter(requirement.specifier)).version:
+    if requirement.url is not None or not _exact_pin(requirement):
         msg = f"hook dependency resolution did not return an exact index pin: {line}"
         raise ValueError(msg)
     return requirement
@@ -284,10 +396,15 @@ def _group_edits(source: str, group: _Group, resolved: list[Requirement]) -> lis
     if managed and not direct and not resolved and len(managed) == len(sequence.value):
         if flow_mapping:
             return [(_start(sequence), _end(sequence), "[]")]
-        end = source.find("\n", _end(sequence.value[-1]))
+        end = source.find("\n", _last_content_end(sequence.value[-1]))
         return [(_start(key), end + 1 if end >= 0 else len(source), f"{key.value}: []\n")]
     roots = {canonicalize_name(requirement.name) for _, requirement in direct}
-    transitive = [item for item in resolved if canonicalize_name(item.name) not in roots]
+    unpinned = {canonicalize_name(requirement.name) for _, requirement in direct if not _exact_pin(requirement)}
+    transitive = [
+        item
+        for item in resolved
+        if canonicalize_name(item.name) not in roots or canonicalize_name(item.name) in unpinned
+    ]
     versions = {
         canonicalize_name(item.name): next(iter(item.specifier)).version
         for item in resolved
@@ -315,21 +432,29 @@ def _flow_mapping_edit(
         (
             _replace_scalar(
                 source[_start(node) : _end(node)], requirement, versions[canonicalize_name(requirement.name)]
-            )
-            if _exact_pin(requirement)
-            else source[_start(node) : _end(node)],
+            ),
             False,
+            _direct_comment(source, node, sequence),
         )
         for node, requirement in direct
     ]
-    values.extend((json.dumps(str(item)), True) for item in transitive)
+    values.extend((json.dumps(str(item)), True, "") for item in transitive)
     indent = " " * (cast("Mark", key.start_mark).column + 2)
     closing = " " * cast("Mark", key.start_mark).column
     lines = [
-        f"{indent}{value}{',' if index < len(values) - 1 else ''}{' # release-creator managed' if managed else ''}"
-        for index, (value, managed) in enumerate(values)
+        f"{indent}{value}{',' if index < len(values) - 1 else ''}{' # release-creator managed' if managed else comment}"
+        for index, (value, managed, comment) in enumerate(values)
     ]
     return _start(sequence), _end(sequence), f"[\n{'\n'.join(lines)}\n{closing}]"
+
+
+def _direct_comment(source: str, node: ScalarNode, sequence: SequenceNode) -> str:
+    end = min(source.find("\n", _end(node)), _end(sequence))
+    if end < 0:
+        end = _end(sequence)
+    trailing = source[_end(node) : end]
+    before, marker, comment = trailing.partition("#")
+    return f" #{comment.rstrip()}" if marker and not before.strip(" ,") else ""
 
 
 def _inline_edit(
@@ -341,13 +466,11 @@ def _inline_edit(
     key, sequence, direct, _, _ = group
     indent = " " * cast("Mark", key.start_mark).column
     existing = []
-    for item in sequence.value:
-        item = cast("ScalarNode", item)
-        scalar = source[_start(item) : _end(item)]
-        match = next(((node, requirement) for node, requirement in direct if node is item), None)
-        if match and _exact_pin(match[1]):
-            scalar = _replace_scalar(scalar, match[1], versions[canonicalize_name(match[1].name)])
-        existing.append(f"{indent}  - {scalar}\n")
+    for node, requirement in direct:
+        scalar = source[_start(node) : _end(node)]
+        existing.append(
+            f"{indent}  - {_replace_scalar(scalar, requirement, versions[canonicalize_name(requirement.name)])}\n"
+        )
     generated = [f"{indent}  - {json.dumps(str(item))} # release-creator managed\n" for item in transitive]
     line_end = source.find("\n", _end(sequence))
     if line_end < 0:
@@ -358,6 +481,8 @@ def _inline_edit(
 
 
 def _replace_scalar(scalar: str, requirement: Requirement, version: str) -> str:
+    if not _exact_pin(requirement):
+        return scalar
     old_version = next(iter(requirement.specifier)).version
     if old_version == version:
         return scalar
@@ -376,11 +501,7 @@ def _block_edits(
     edits: list[_Edit] = []
     for node, requirement in direct:
         scalar = source[_start(node) : _end(node)]
-        updated = (
-            _replace_scalar(scalar, requirement, versions[canonicalize_name(requirement.name)])
-            if _exact_pin(requirement)
-            else scalar
-        )
+        updated = _replace_scalar(scalar, requirement, versions[canonicalize_name(requirement.name)])
         if scalar != updated:
             edits.append((_start(node), _end(node), updated))
     for node in managed:
@@ -390,7 +511,7 @@ def _block_edits(
     if transitive:
         first = _start(sequence.value[0])
         indent = source[source.rfind("\n", 0, first) + 1 : first].partition("-")[0]
-        end = source.find("\n", _end(sequence.value[-1]))
+        end = source.find("\n", _last_content_end(sequence.value[-1]))
         insertion = end + 1 if end >= 0 else len(source)
         prefix = "\n" if end < 0 and not source.endswith("\n") else ""
         lines = (f"{indent}- {json.dumps(str(item))} # release-creator managed\n" for item in transitive)

@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 lazy import re
+lazy from collections.abc import Iterator
 lazy from dataclasses import dataclass
-lazy from typing import Final
+lazy from html.parser import HTMLParser
+lazy from typing import Final, override
+lazy from urllib.parse import urlsplit
 
 lazy import mdformat
+lazy from markdown_it import MarkdownIt
 lazy from packaging.version import InvalidVersion, Version
 
 lazy from release_creator.anchors.names import release_anchor
@@ -17,28 +21,59 @@ lazy from release_creator.notes.rst import render_rst_section
 
 _RE_RELEASE_PULL: Final = re.compile(
     r"""
-    https://github\.com/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+)  # PR URL
+    (?<![A-Za-z0-9_.#-])  # Ignore words and headings
+    (?:
+        \#|GH-  # GitHub's current-repository shorthand
+        |
+        (?P<short_repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\#  # Owner/repository shorthand
+        |
+        (?:https?://)?(?:www\.)?github\.com/
+        (?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/
+        (?P<kind>pull|issues)/  # GitHub also serves PRs at their issue URL
+    )
+    (?P<number>\d+)
     """,
-    re.VERBOSE,
-)
-_RE_MARKDOWN_PULL_LABEL: Final = re.compile(
-    r"""
-    \[\#(?P<label>\d+)\]\(  # Displayed PR number
-    https://github\.com/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+)  # URL number
-    \)
-    """,
-    re.VERBOSE,
+    re.VERBOSE | re.IGNORECASE,
 )
 _RE_GITHUB_CREDIT: Final = re.compile(
     r"""
-    \s(?:-\s)?by\s+          # Credit after the final PR link
-    (?P<credits>[^\n]+)$         # Credit after the final PR link
+    \s(?:-\s)?by\s+  # Candidate author credit
     """,
     re.VERBOSE,
 )
 _RE_GITHUB_HANDLE: Final = re.compile(
     r"""
     @(?P<handle>[A-Za-z0-9-]+)   # GitHub mention
+    """,
+    re.VERBOSE,
+)
+_RE_PROFILE_LABEL: Final = re.compile(
+    r"""
+    @(?P<handle>[A-Za-z0-9-]+)  # Displayed GitHub handle
+    """,
+    re.VERBOSE,
+)
+_RE_GITHUB_PATH: Final = re.compile(
+    r"""
+    ^/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)  # Owner and repository
+    /(?P<kind>pull|issues)/(?P<number>\d+)             # Pull request or issue route
+    (?:/|$)                                             # Optional subpath
+    """,
+    re.VERBOSE,
+)
+_RE_PULL_LABEL: Final = re.compile(
+    r"""
+    (?:PR\ )?\#(?P<number>\d+)  # Displayed pull request number
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+_RE_CREDIT_HANDLES: Final = re.compile(
+    r"""
+    ^\s*(?P<handles>
+        @[A-Za-z0-9-]+  # First credited author
+        (?:(?:\s*,\s*|\s+and\s+)@[A-Za-z0-9-]+)*  # Additional authors
+    )
+    (?:[.,;)\s]|$)  # Credit ends before other prose
     """,
     re.VERBOSE,
 )
@@ -87,8 +122,14 @@ _RE_MARKDOWN_VERSION: Final = re.compile(
 _RE_MARKDOWN_VERSION_ANCHOR: Final = re.compile(
     r"""
     ^<a\ name="release-             # Version anchor prefix
-    (?P<version>v?[A-Za-z0-9.-]+)  # Version encoded for an anchor
+    (?P<version>v?[A-Za-z0-9_.-]+)  # Version encoded for an anchor
     "></a>$                         # Anchor terminator
+    """,
+    re.VERBOSE,
+)
+_RE_MARKDOWN_ANCHOR: Final = re.compile(
+    r"""
+    ^<a\ name="(?P<anchor>release-[A-Za-z0-9_-]+)"></a>$  # Complete release or category anchor
     """,
     re.VERBOSE,
 )
@@ -146,8 +187,9 @@ def render_rst(changelog: str, context: ReleaseContext, generated_notes: str | N
 
 
 def _finish(notes: str, context: ReleaseContext, generated_notes: str | None) -> str:
+    visible_lines = list(_visible_lines(notes, context.repository))
     if generated_notes is not None:
-        _verify_authors(notes, generated_notes, context)
+        _verify_authors(visible_lines, generated_notes, context)
         if contributors := _new_contributors(generated_notes, context):
             notes = f"{notes}\n\n{contributors}" if notes else contributors
     if context.artifact_url is not None:
@@ -161,21 +203,23 @@ def _finish(notes: str, context: ReleaseContext, generated_notes: str | None) ->
     return f"{notes}[Full Changelog](https://github.com/{context.repository}/{comparison})\n"
 
 
-def _verify_authors(notes: str, generated_notes: str, context: ReleaseContext) -> None:
+def _verify_authors(visible_lines: list[str], generated_notes: str, context: ReleaseContext) -> None:
     generated_authors, generated_bots = _generated_pr_authors(generated_notes, context.repository)
-    for number, entries in _release_entries(notes, context.repository).items():
+    for number, entries in _release_entries(visible_lines, context.repository, set(generated_authors)).items():
         if number not in generated_authors:
             if any(not handles for handles, _ in entries):
                 msg = f"generated notes have no author for pull request #{number}"
                 raise ValueError(msg)
             continue
-        if (bot := generated_bots.get(number)) is not None and any(bot in handles for handles, _ in entries):
+        if (bot := generated_bots.get(number)) is not None and any(bot.casefold() in handles for handles, _ in entries):
             msg = f"changelog credit for pull request #{number} must not name bot @{bot}"
             raise ValueError(msg)
         if bot is None and generated_authors[number] is None and any(not attributed for _, attributed in entries):
             msg = f"changelog has no credit for pull request #{number} with an unavailable author"
             raise ValueError(msg)
-        if (author := generated_authors[number]) is not None and any(author not in handles for handles, _ in entries):
+        if (author := generated_authors[number]) is not None and any(
+            author.casefold() not in handles for handles, _ in entries
+        ):
             msg = f"changelog credit for pull request #{number} does not include @{author}"
             raise ValueError(msg)
 
@@ -189,7 +233,9 @@ def _generated_pr_authors(generated_notes: str, repository: str) -> tuple[dict[s
             in_new_contributors = line.removeprefix("### ").removeprefix("## ") == "New Contributors"
         if in_new_contributors:
             continue
-        if (link := _RE_GENERATED_PR_LINK.search(line)) is None or link["repository"] != repository:
+        if (link := _RE_GENERATED_PR_LINK.search(line)) is None or link[
+            "repository"
+        ].casefold() != repository.casefold():
             continue
         match = _RE_GENERATED_PR_AUTHOR.search(line)
         number = link["number"]
@@ -203,10 +249,12 @@ def _generated_pr_authors(generated_notes: str, repository: str) -> tuple[dict[s
     return authors, bots
 
 
-def _release_entries(notes: str, repository: str) -> dict[str, list[tuple[set[str], bool]]]:
+def _release_entries(
+    visible_lines: list[str], repository: str, known_numbers: set[str]
+) -> dict[str, list[tuple[set[str], bool]]]:
     entries: dict[str, list[tuple[set[str], bool]]] = {}
-    for line in notes.splitlines():
-        references = _pull_references(line, repository)
+    for line in visible_lines:
+        references = _pull_references(line, repository, known_numbers)
         if not references:
             continue
         initial_credit = _entry_credit(line[: references[0].start()], named=False)
@@ -218,10 +266,7 @@ def _release_entries(notes: str, repository: str) -> dict[str, list[tuple[set[st
                 for item in pending:
                     entries.setdefault(item["number"], []).append(credit)
                 pending.clear()
-            elif index + 1 < len(references) and (
-                following.partition("[")[0].strip(" ()") not in {",", "and", ", and"}
-                or _parenthetical_pull_link(line, reference) != _parenthetical_pull_link(line, references[index + 1])
-            ):
+            elif index + 1 < len(references) and not _shared_credit_group(line, reference, references[index + 1]):
                 for item in pending:
                     entries.setdefault(item["number"], []).append(initial_credit or (set(), False))
                 pending.clear()
@@ -232,25 +277,113 @@ def _release_entries(notes: str, repository: str) -> dict[str, list[tuple[set[st
     return entries
 
 
-def _parenthetical_pull_link(line: str, reference: re.Match[str]) -> bool:
-    return line[: reference.start()].endswith(f"([#{reference['number']}](")
+def _shared_credit_group(line: str, first: re.Match[str], second: re.Match[str]) -> bool:
+    between = line[first.end() : second.start()]
+    return between.strip(" (),;") in {"", "and"}
 
 
-def _pull_references(line: str, repository: str) -> list[re.Match[str]]:
-    for label in _RE_MARKDOWN_PULL_LABEL.finditer(line):
-        if label["repository"] == repository and label["label"] != label["number"]:
-            msg = f"pull request label #{label['label']} points to #{label['number']}"
+def _visible_lines(notes: str, repository: str) -> Iterator[str]:
+    parser = _RawHtmlLinkParser()
+    for token in MarkdownIt().parse(notes):
+        if token.type == "html_block":
+            parser.feed(token.content)
+            yield from parser.take_text().splitlines()
+        if token.type != "inline":
+            continue
+        parts: list[str] = []
+        children = token.children or []
+        index = 0
+        while index < len(children):
+            child = children[index]
+            if child.type == "link_open":
+                end = next(
+                    position for position in range(index + 1, len(children)) if children[position].type == "link_close"
+                )
+                label = "".join(
+                    item.content for item in children[index + 1 : end] if item.type in {"text", "code_inline"}
+                )
+                parts.append(_visible_link(label, str(child.attrGet("href") or ""), repository))
+                index = end
+            elif child.type == "text":
+                parts.append(child.content)
+            elif child.type in {"softbreak", "hardbreak"}:
+                parts.append("\n")
+            elif child.type == "html_inline":
+                parser.feed(child.content)
+                parts.append(parser.take_text())
+            elif child.type == "code_inline":
+                parts.append(" ")
+            index += 1
+        yield from "".join(parts).splitlines()
+
+
+def _visible_link(label: str, url: str, repository: str) -> str:
+    if (profile := _RE_PROFILE_LABEL.fullmatch(label)) is not None:
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "https"
+            or parsed.netloc.casefold() not in {"github.com", "www.github.com"}
+            or parsed.path.casefold() not in {f"/{profile['handle']}", f"/{profile['handle']}/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            msg = f"GitHub credit link for @{profile['handle']} points to another profile"
             raise ValueError(msg)
-    return [match for match in _RE_RELEASE_PULL.finditer(line) if match["repository"] == repository]
+        return label
+    parsed = urlsplit(url)
+    path = _RE_GITHUB_PATH.match(parsed.path)
+    github_pull = (
+        parsed.scheme == "https" and parsed.netloc.casefold() in {"github.com", "www.github.com"} and path is not None
+    )
+    current_pull = github_pull and path is not None and path["repository"].casefold() == repository.casefold()
+    number = _RE_PULL_LABEL.fullmatch(label)
+    if (
+        number is not None
+        and not (github_pull and not current_pull)
+        and (not current_pull or number["number"] != path["number"])
+    ):
+        destination = path["number"] if current_pull else "another URL"
+        msg = f"pull request label #{number['number']} points to #{destination}"
+        raise ValueError(msg)
+    return f" https://github.com/{repository}/pull/{path['number']} " if current_pull else " "
+
+
+def _pull_references(line: str, repository: str, known_numbers: set[str]) -> list[re.Match[str]]:
+    candidates = [
+        match
+        for match in _RE_RELEASE_PULL.finditer(line)
+        if (match["repository"] is None or match["repository"].casefold() == repository.casefold())
+        and (match["short_repository"] is None or match["short_repository"].casefold() == repository.casefold())
+        and not _reference_in_url(line, match)
+    ]
+    known = known_numbers | {match["number"] for match in candidates if match["kind"] == "pull"}
+    return [match for match in candidates if match["kind"] == "pull" or match["number"] in known]
+
+
+def _reference_in_url(line: str, match: re.Match[str]) -> bool:
+    prefix = line[: match.start()]
+    if not prefix or prefix[-1].isspace():
+        return False
+    before = prefix.split()
+    return bool(before and before[-1].lstrip("(").startswith(("https://", "http://")))
 
 
 def _entry_credit(text: str, *, named: bool) -> tuple[set[str], bool] | None:
-    if (marker := _RE_GITHUB_CREDIT.search(text)) is None:
-        return None
-    credit_text = str(marker.group("credits"))
-    handles = {str(match.group("handle")) for match in _RE_GITHUB_HANDLE.finditer(credit_text)}
-    plain_name = credit_text.strip(" .()")
-    return handles, bool(handles) or (named and len(plain_name.split()) > 1 and plain_name.istitle())
+    for marker in _RE_GITHUB_CREDIT.finditer(text):
+        prefix = text[: marker.start()].strip()
+        if named and prefix.strip("(),;.-"):
+            continue
+        if not named and prefix.rsplit(" ", 1)[-1].casefold() in {"reviewed", "tested", "approved", "verified"}:
+            continue
+        credit_text = text[marker.end() :]
+        handles = (
+            {str(item.group("handle")).casefold() for item in _RE_GITHUB_HANDLE.finditer(match["handles"])}
+            if (match := _RE_CREDIT_HANDLES.match(credit_text)) is not None
+            else set[str]()
+        )
+        plain_name = credit_text.strip(" .()")
+        return handles, bool(handles) or (named and len(plain_name.split()) > 1 and plain_name.istitle())
+    return None
 
 
 def _new_contributors(generated_notes: str, context: ReleaseContext) -> str:
@@ -300,21 +433,15 @@ def _extract_rst_body(changelog: str, context: ReleaseContext) -> str:
     lines = [line for line in changelog.splitlines() if not _is_comparison_line(line)]
     headings = [
         index
-        for index, line in enumerate(lines)
-        if (match := _RE_RST_VERSION.fullmatch(line.strip()))
-        and _is_version(match["tag"] or match["link_tag"])
+        for index in range(len(lines))
+        if (match := _rst_version_at(lines, index))
         and (match["tag"] or match["link_tag"]).removeprefix("v") == context.tag.removeprefix("v")
     ]
     if len(headings) != 1:
         msg = f"expected one changelog section for {context.tag}, found {len(headings)}"
         raise ValueError(msg)
     end = next(
-        (
-            index
-            for index in range(headings[0] + 1, len(lines))
-            if (match := _RE_RST_VERSION.fullmatch(lines[index].strip()))
-            and _is_version(match["tag"] or match["link_tag"])
-        ),
+        (index for index in range(headings[0] + 1, len(lines)) if _rst_version_at(lines, index) is not None),
         len(lines),
     )
     start = headings[0] + 1
@@ -323,6 +450,21 @@ def _extract_rst_body(changelog: str, context: ReleaseContext) -> str:
     if end < len(lines) and _is_rst_adornment(lines[end - 1]):
         end -= 1
     return render_rst_section("\n".join(lines[start:end]), context.tag, context.repository)
+
+
+def _rst_version_at(lines: list[str], index: int) -> re.Match[str] | None:
+    line = lines[index]
+    if line[:1].isspace() and not (
+        line.startswith(" ")
+        and not line.startswith("  ")
+        and index > 0
+        and index + 1 < len(lines)
+        and _is_rst_adornment(lines[index - 1])
+        and _is_rst_adornment(lines[index + 1])
+    ):
+        return None
+    match = _RE_RST_VERSION.fullmatch(line.strip())
+    return match if match is not None and _is_version(match["tag"] or match["link_tag"]) else None
 
 
 def _is_rst_adornment(line: str) -> bool:
@@ -399,13 +541,22 @@ def _extract_body(changelog: str, context: ReleaseContext) -> str:
             (match := _RE_MARKDOWN_VERSION.fullmatch(source_line)) is not None
             and _is_version(match["tag"])
             and match["level"] == heading_level
-        ) or (
-            (match := _RE_MARKDOWN_VERSION_ANCHOR.fullmatch(source_line)) is not None
-            and _is_version(match["version"].replace("-", "."))
-        ):
+        ) or _is_version_anchor(source_line, context.package):
             break
         body.append(source_line)
     return _convert_markdown_body(body, "#### " if context.package is not None else "### ")
+
+
+def _is_version_anchor(line: str, package: str | None) -> bool:
+    if (match := _RE_MARKDOWN_VERSION_ANCHOR.fullmatch(line)) is None:
+        return False
+    version = match["version"]
+    if package is not None:
+        prefix = f"{package.replace('.', '-')}-"
+        if not version.startswith(prefix):
+            return False
+        version = version.removeprefix(prefix)
+    return _is_version(version.replace("-", "."))
 
 
 def _convert_markdown_body(lines: list[str], category_prefix: str) -> str:
@@ -435,7 +586,7 @@ def _convert_markdown_body(lines: list[str], category_prefix: str) -> str:
             category_has_item = True
         elif (
             source_line.strip()
-            and not (source_line.startswith('<a name="release-') and source_line.endswith('"></a>'))
+            and _RE_MARKDOWN_ANCHOR.fullmatch(source_line) is None
             and (not in_item or not source_line[0].isspace())
         ):
             msg = f"release text outside an item: {source_line}"
@@ -447,6 +598,27 @@ def _convert_markdown_body(lines: list[str], category_prefix: str) -> str:
         raise ValueError(msg)
 
     return "\n".join(body).strip()
+
+
+class _RawHtmlLinkParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self._text: list[str] = []
+
+    def take_text(self) -> str:
+        content = "".join(self._text)
+        self._text.clear()
+        return content
+
+    @override
+    def handle_data(self, data: str) -> None:
+        self._text.append(data)
+
+    @override
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "a" and any(name == "href" for name, _ in attrs):
+            msg = "raw HTML links are unsupported in release notes"
+            raise ValueError(msg)
 
 
 def _is_comparison_line(line: str) -> bool:

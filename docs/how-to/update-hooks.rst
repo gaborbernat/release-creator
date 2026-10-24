@@ -8,18 +8,22 @@ weekly change to pin packages declared by Python hook repositories and packages 
 .. code-block:: bash
 
     prek update --freeze --cooldown-days 7
-    release-creator hooks --exclude-newer '7 days' --python-version 3.15
+    release-creator hooks
     prek run --all-files
 
 The command checks out each external hook repository at its frozen commit and reads ``.pre-commit-hooks.yaml``. For
-selected Python hooks, it resolves the repository package with any exact ``additional_dependencies`` and adds the pinned
-closure to that hook's ``additional_dependencies``. It also resolves exact dependencies in local hooks. Conditional
+selected Python hooks, it resolves the repository package with all ``additional_dependencies`` and adds the pinned
+closure to that hook's ``additional_dependencies``. It also resolves dependencies in local hooks. Conditional
 dependencies remain conditional, so a Windows-only package does not install on Linux. Non-Python hooks are unchanged.
 
 Generated pins have a ``# release-creator managed`` marker. The next update replaces them. Direct pins retain their
-spelling and comments; a flow-style list becomes a block list when the closure adds packages. A range such as
-``mdformat-gfm>=1`` stays as written and is not a resolution root. Use the Python version that the hooks run with; the
-cutoff excludes newly published packages.
+comments and version ranges; ranges and unpinned requirements gain a separate exact pin. A flow-style list becomes a
+block list when the closure adds packages. Resolution uses each hook's ``language_version``, then its manifest default,
+then the top-level ``default_language_version``; otherwise it targets Python 3.15. It excludes packages released in the
+last seven days and ignores uv config files, source overrides, and environment settings that could change the index,
+resolver, or TLS trust. It resolves packages from PyPI. An alias that shares an edited value is rejected because
+changing the anchor could also change an unrelated hook field. YAML merge keys in hook and repository definitions are
+rejected because they can hide a hook's dependencies or source from the updater.
 
 If uv cannot resolve every pinned package, the command fails without changing the file. Review the patch and run
 ``prek`` before opening the update PR. The command does not update hook revisions, project requirements, or

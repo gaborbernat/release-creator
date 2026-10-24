@@ -39,8 +39,9 @@ def test_updates_each_hook_with_its_universal_closure(tmp_path: Path, mocker: Mo
         "MDFormat_GFM\nsphinx>=9\n": "mdformat-gfm==1.1.0\nsphinx==9.1.1\nmdformat==1.0.0\n",
     }
 
-    def resolve(command: list[str], *, stdin: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    def resolve(command: list[str], *, stdin: str, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
         assert cwd == tmp_path
+        assert "UV_INDEX_URL" not in env
         return subprocess.CompletedProcess(command, 0, responses[stdin], "")
 
     run = mocker.patch("release_creator.hooks.update.run_text", side_effect=resolve)
@@ -56,6 +57,7 @@ def test_updates_each_hook_with_its_universal_closure(tmp_path: Path, mocker: Mo
         "        additional_dependencies: # keep\n"
         "          - 'MDFormat_GFM==1.1.0'\n"
         "          - sphinx>=9\n"
+        '          - "sphinx==9.1.1" # release-creator managed\n'
         '          - "mdformat==1.0.0" # release-creator managed\n'
         "      - id: docs\n"
         "        language: python\n"
@@ -66,10 +68,17 @@ def test_updates_each_hook_with_its_universal_closure(tmp_path: Path, mocker: Mo
     assert len(run.call_args_list) == len({"format", "docs"})
     assert {call.kwargs["stdin"] for call in run.call_args_list} == set(responses)
     assert all("--universal" in call.args[0] for call in run.call_args_list)
+    assert all("--no-config" in call.args[0] for call in run.call_args_list)
+    assert all("--no-sources" in call.args[0] for call in run.call_args_list)
+    assert all(
+        call.args[0][call.args[0].index("--exclude-newer") + 1] == "2026-10-14T00:00:00Z" for call in run.call_args_list
+    )
     assert all("--no-deps" not in call.args[0] for call in run.call_args_list)
 
 
-def test_resolves_real_universal_closure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolves_real_universal_closure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
     wheels = tmp_path / "wheels"
     wheels.mkdir()
     for name, version, requirements in (
@@ -81,6 +90,12 @@ def test_resolves_real_universal_closure(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setenv("UV_NO_INDEX", "1")
     monkeypatch.setenv("UV_FIND_LINKS", str(wheels))
     monkeypatch.setenv("UV_OFFLINE", "1")
+    compiled = run_text(
+        ["uv", "pip", "compile", "-", "--universal", "--no-config", "--no-sources", "--no-header", "--no-annotate"],
+        stdin="closure-root\n",
+        cwd=tmp_path,
+    )
+    assert compiled.returncode == 0
     config = tmp_path / ".pre-commit-config.yaml"
     config.write_text(
         "repos:\n  - repo: local\n    hooks:\n      - id: closure\n"
@@ -88,6 +103,10 @@ def test_resolves_real_universal_closure(tmp_path: Path, monkeypatch: pytest.Mon
         encoding="utf-8",
     )
 
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        side_effect=lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, compiled.stdout, ""),
+    )
     update_pins(config, "2099-01-01T00:00:00Z", "3.15")
 
     assert safe_load(config.read_text(encoding="utf-8"))["repos"][0]["hooks"][0]["additional_dependencies"] == [
@@ -95,6 +114,48 @@ def test_resolves_real_universal_closure(tmp_path: Path, monkeypatch: pytest.Mon
         "closure-child==2.0.0",
         'closure-color==0.4.6; sys_platform == "win32"',
     ]
+
+
+def test_ignores_ambient_uv_resolution_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "repos:\n  - repo: local\n    hooks:\n      - id: format\n"
+        "        language: python\n        additional_dependencies: [packaging==26.0]\n",
+        encoding="utf-8",
+    )
+    for name in (
+        "UV_INDEX",
+        "UV_INDEX_URL",
+        "UV_EXTRA_INDEX_URL",
+        "UV_DEFAULT_INDEX",
+        "UV_FIND_LINKS",
+        "UV_CONSTRAINT",
+        "UV_OVERRIDE",
+        "UV_INSECURE_HOST",
+        "PIP_INDEX_URL",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "SSL_CLIENT_CERT",
+    ):
+        monkeypatch.setenv(name, "https://evil.invalid/simple/")
+    mocker.patch("release_creator.process.shutil.which", return_value="uv")
+    execute = mocker.patch(
+        "release_creator.process.subprocess.run",
+        autospec=True,
+        return_value=subprocess.CompletedProcess([], 0, "packaging==26.1\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert safe_load(config.read_text(encoding="utf-8"))["repos"][0]["hooks"][0]["additional_dependencies"] == [
+        "packaging==26.1"
+    ]
+    assert execute.call_args.args[0][execute.call_args.args[0].index("--default-index") + 1] == (
+        "https://pypi.org/simple/"
+    )
+    assert all("evil.invalid" not in value for value in execute.call_args.kwargs["env"].values())
 
 
 def test_block_closure_stays_with_its_hook(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -304,6 +365,54 @@ def test_pins_python_hook_package_dependencies(
     assert config.read_text(encoding="utf-8") == first
 
 
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        pytest.param("", "3.12", id="manifest-version"),
+        pytest.param("        language_version: python3.13\n", "3.13", id="configuration-override"),
+    ],
+)
+def test_resolves_hook_with_effective_python_version(
+    tmp_path: Path, mocker: MockerFixture, upstream_python_hook: tuple[Path, str], override: str, expected: str
+) -> None:
+    upstream, _ = upstream_python_hook
+    (upstream / ".pre-commit-hooks.yaml").write_text(
+        "- id: lint\n  name: lint\n  entry: lint\n  language: python\n  language_version: python3.12\n",
+        encoding="utf-8",
+    )
+    assert run_text(["git", "-C", str(upstream), "add", "."]).returncode == 0
+    assert (
+        run_text([
+            "git",
+            "-C",
+            str(upstream),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.org",
+            "commit",
+            "-qm",
+            "Set Python version",
+        ]).returncode
+        == 0
+    )
+    revision = run_text(["git", "-C", str(upstream), "rev-parse", "HEAD"]).stdout.strip()
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        f"repos:\n  - repo: {upstream.as_uri()}\n    rev: {revision}\n    hooks:\n      - id: lint\n{override}",
+        encoding="utf-8",
+    )
+    commands = _mock_hook_compiler(mocker, "-e file:///checkout\nclick==8.1\n")
+
+    update_pins(config, "7 days", "3.15")
+
+    assert [
+        call.args[0][call.args[0].index("--python-version") + 1]
+        for call in commands.call_args_list
+        if call.args[0][0] == "uv"
+    ] == [expected]
+
+
 @pytest.mark.parametrize("style", [pytest.param("|", id="literal"), pytest.param(">+", id="folded")])
 def test_adds_hook_dependencies_after_block_scalar(
     tmp_path: Path, mocker: MockerFixture, upstream_python_hook: tuple[Path, str], style: str
@@ -492,13 +601,13 @@ def _mock_hook_compiler(mocker: MockerFixture, output: str) -> MagicMock:
     original = run_text
 
     def resolve(
-        command: list[str], *, stdin: str | None = None, cwd: Path | None = None
+        command: list[str], *, stdin: str | None = None, cwd: Path | None = None, env: dict[str, str] | None = None
     ) -> subprocess.CompletedProcess[str]:
         if command[0] == "uv":
             assert stdin is not None
             assert stdin.startswith("-e file://")
             return subprocess.CompletedProcess(command, 0, output, "")
-        return original(command, cwd=cwd, stdin=stdin)
+        return original(command, cwd=cwd, stdin=stdin, env=env)
 
     mocker.patch("release_creator.process.shutil.which", side_effect=lambda name: name)
     patched = mocker.patch("release_creator.hooks.update.run_text", side_effect=resolve)
@@ -564,11 +673,49 @@ def test_preserves_dependency_list_on_rerun(tmp_path: Path, mocker: MockerFixtur
     assert config.read_text(encoding="utf-8") == first
 
 
-def test_flow_mapping_marks_transitive_dependencies(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_adds_managed_dependency_after_folded_root(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text("additional_dependencies:\n  - >-\n    black==1\nnext: value\n", encoding="utf-8")
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "black==2\nclick==8\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert safe_load(config.read_text(encoding="utf-8")) == {
+        "additional_dependencies": ["black==2", "click==8"],
+        "next": "value",
+    }
+
+
+def test_folded_root_stays_when_managed_pin_follows(tmp_path: Path, mocker: MockerFixture) -> None:
     config = tmp_path / ".pre-commit-config.yaml"
     config.write_text(
-        "repos:\n  - repo: local\n    hooks:\n"
-        "      - {id: format, language: python, additional_dependencies: [black==1]}\n",
+        'additional_dependencies:\n  - >-\n    sphinx>=9\n  - "sphinx==9.1" # release-creator managed\n',
+        encoding="utf-8",
+    )
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "sphinx==9.1\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert safe_load(config.read_text(encoding="utf-8"))["additional_dependencies"] == [
+        "sphinx>=9",
+        "sphinx==9.1",
+    ]
+
+
+def test_updates_multiline_flow_hook_without_stale_pins(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "repos:\n  - repo: local\n    hooks:\n      - id: format\n"
+        "        language: python\n        additional_dependencies: [\n"
+        '          black==1,\n          "click==7", # release-creator managed\n        ]\n',
         encoding="utf-8",
     )
     mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
@@ -586,6 +733,54 @@ def test_flow_mapping_marks_transitive_dependencies(tmp_path: Path, mocker: Mock
     assert config.read_text(encoding="utf-8") == first
 
 
+@pytest.mark.parametrize(
+    "trailing_newline", [pytest.param(False, id="no-final-newline"), pytest.param(True, id="final-newline")]
+)
+def test_flow_mapping_marks_transitive_dependencies(
+    tmp_path: Path, mocker: MockerFixture, trailing_newline: bool
+) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    source = (
+        "repos:\n  - repo: local\n    hooks:\n"
+        "      - {id: format, language: python, additional_dependencies: [black==1]}"
+    )
+    config.write_text(f"{source}{'\n' if trailing_newline else ''}", encoding="utf-8")
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "black==2\nclick==8\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+    first = config.read_text(encoding="utf-8")
+    update_pins(config, "7 days", "3.15")
+
+    assert safe_load(first)["repos"][0]["hooks"][0]["additional_dependencies"] == ["black==2", "click==8"]
+    assert first.count("# release-creator managed") == 1
+    assert config.read_text(encoding="utf-8") == first
+
+
+def test_flow_mapping_keeps_direct_dependency_comment(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "repos:\n  - repo: local\n    hooks:\n"
+        "      - {id: format, language: python, additional_dependencies: [\n"
+        "          black==1, # keep human note\n        ]}\n",
+        encoding="utf-8",
+    )
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "black==2\nclick==8\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    updated = config.read_text(encoding="utf-8")
+    assert "black==2, # keep human note\n" in updated
+    assert safe_load(updated)["repos"][0]["hooks"][0]["additional_dependencies"] == ["black==2", "click==8"]
+
+
 def test_flow_mapping_removes_orphaned_managed_dependency(tmp_path: Path) -> None:
     config = tmp_path / ".pre-commit-config.yaml"
     config.write_text(
@@ -599,6 +794,22 @@ def test_flow_mapping_removes_orphaned_managed_dependency(tmp_path: Path) -> Non
     update_pins(config, "7 days", "3.15")
 
     assert safe_load(config.read_text(encoding="utf-8"))["repos"][0]["hooks"][0]["additional_dependencies"] == []
+
+
+def test_flow_sequence_replaces_managed_dependency(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        'additional_dependencies: [\n  black==1,\n  "click==8", # release-creator managed\n]\n', encoding="utf-8"
+    )
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "black==2\nclick==9\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert safe_load(config.read_text(encoding="utf-8"))["additional_dependencies"] == ["black==2", "click==9"]
 
 
 def test_preserves_crlf_in_hook_config(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -663,7 +874,7 @@ def test_keeps_comment_on_empty_dependency_list(tmp_path: Path) -> None:
     assert config.read_text(encoding="utf-8") == source
 
 
-def test_keeps_nonexact_dependency_when_root_is_removed(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_pins_nonexact_dependency_when_root_is_removed(tmp_path: Path, mocker: MockerFixture) -> None:
     config = tmp_path / ".pre-commit-config.yaml"
     config.write_text(
         'additional_dependencies:\n  - sphinx>=9\n  - "click==9" # release-creator managed\n',
@@ -677,7 +888,9 @@ def test_keeps_nonexact_dependency_when_root_is_removed(tmp_path: Path, mocker: 
 
     update_pins(config, "2026-10-14T00:00:00Z", "3.15")
 
-    assert config.read_text(encoding="utf-8") == "additional_dependencies:\n  - sphinx>=9\n"
+    assert config.read_text(encoding="utf-8") == (
+        'additional_dependencies:\n  - sphinx>=9\n  - "sphinx==9.1" # release-creator managed\n'
+    )
 
 
 def test_resolves_ranges_and_unpinned_roots(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -695,9 +908,267 @@ def test_resolves_ranges_and_unpinned_roots(tmp_path: Path, mocker: MockerFixtur
     assert safe_load(config.read_text(encoding="utf-8"))["additional_dependencies"] == [
         "sphinx>=9",
         "mdformat-gfm",
+        "sphinx==9.1",
+        "mdformat-gfm==1.2",
         "colorama==0.4.6",
     ]
     assert run.call_args.kwargs["stdin"] == "sphinx>=9\nmdformat-gfm\n"
+
+
+def test_preserves_upper_bound_on_next_hook_update(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text("additional_dependencies:\n  - toml-fmt-common<1.3.3,>=1.3.2\n", encoding="utf-8")
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    run = mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "toml-fmt-common==1.3.2\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+    first = config.read_text(encoding="utf-8")
+    update_pins(config, "7 days", "3.15")
+
+    assert first == (
+        "additional_dependencies:\n  - toml-fmt-common<1.3.3,>=1.3.2\n"
+        '  - "toml-fmt-common==1.3.2" # release-creator managed\n'
+    )
+    assert config.read_text(encoding="utf-8") == first
+    assert all(call.kwargs["stdin"] == "toml-fmt-common<1.3.3,>=1.3.2\n" for call in run.call_args_list)
+
+
+def test_preserves_wildcard_cap_on_next_hook_update(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text("additional_dependencies: [example==1.*]\n", encoding="utf-8")
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    run = mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "example==1.9\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+    first = config.read_text(encoding="utf-8")
+    update_pins(config, "7 days", "3.15")
+
+    assert safe_load(first)["additional_dependencies"] == ["example==1.*", "example==1.9"]
+    assert config.read_text(encoding="utf-8") == first
+    assert all(call.kwargs["stdin"] == "example==1.*\n" for call in run.call_args_list)
+
+
+def test_resolves_each_hook_with_its_python_version(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "default_language_version:\n  python: python3.14\n"
+        "repos:\n  - repo: local\n    hooks:\n"
+        "      - id: default\n        language: python\n        additional_dependencies: [sphinx>=9]\n"
+        "      - id: override\n        language: python\n        language_version: python3.15\n"
+        "        additional_dependencies: [sphinx>=9]\n"
+    )
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    run = mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "sphinx==9.1\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert {call.args[0][call.args[0].index("--python-version") + 1] for call in run.call_args_list} == {"3.14", "3.15"}
+
+
+def test_explicit_python3_uses_runner_version(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "default_language_version:\n  python: python3.14\n"
+        "repos:\n  - repo: local\n    hooks:\n"
+        "      - id: hook\n        language: python\n        language_version: python3\n"
+        "        additional_dependencies: [sphinx>=9]\n"
+    )
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    run = mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "sphinx==9.1\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert run.call_args.args[0][run.call_args.args[0].index("--python-version") + 1] == "3.15"
+
+
+@pytest.mark.parametrize(
+    ("language_version", "expected"),
+    [
+        pytest.param("python3", "3.15", id="interpreter-major"),
+        pytest.param("default", "3.15", id="default"),
+    ],
+)
+def test_resolves_generic_python_hook_version(
+    tmp_path: Path, mocker: MockerFixture, language_version: str, expected: str
+) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        f"default_language_version:\n  python: {language_version}\nadditional_dependencies: [sphinx>=9]\n"
+    )
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    run = mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "sphinx==9.1\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert run.call_args.args[0][run.call_args.args[0].index("--python-version") + 1] == expected
+
+
+def test_rejects_unsupported_hook_python_version(tmp_path: Path) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text("default_language_version:\n  python: python2.7\nadditional_dependencies: [sphinx>=9]\n")
+
+    with pytest.raises(ValueError, match="unsupported Python hook language_version"):
+        update_pins(config, "7 days", "3.15")
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            "repos:\n  - repo: local\n    hooks:\n"
+            "      - id: first\n        language: python\n        additional_dependencies: &deps [black==1]\n"
+            "      - id: second\n        language: python\n        additional_dependencies: *deps\n",
+            id="shared-dependency-list",
+        ),
+        pytest.param(
+            "repos:\n  - repo: local\n    hooks:\n"
+            "      - id: first\n        language: python\n        args: &deps [black==1]\n"
+            "        additional_dependencies: *deps\n",
+            id="unrelated-anchored-list",
+        ),
+        pytest.param(
+            "repos:\n  - repo: local\n    hooks:\n"
+            "      - id: first\n        language: python\n        args: &deps\n"
+            "          - black==1\n        additional_dependencies: *deps\n",
+            id="unrelated-anchored-block-list",
+        ),
+        pytest.param(
+            "repos:\n  - repo: local\n    hooks:\n"
+            "      - id: first\n        language: python\n        additional_dependencies: [&dep black==1]\n"
+            "      - id: second\n        language: python\n        additional_dependencies: [*dep]\n",
+            id="shared-scalar",
+        ),
+    ],
+)
+def test_rejects_aliased_hook_configuration(tmp_path: Path, mocker: MockerFixture, source: str) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(source, encoding="utf-8")
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "black==2\n", ""),
+    )
+
+    with pytest.raises(ValueError, match="YAML aliases cannot be updated safely"):
+        update_pins(config, "7 days", "3.15")
+
+    assert config.read_text(encoding="utf-8") == source
+
+
+def test_updates_hook_with_unrelated_yaml_alias(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "ci:\n  label: &label dependencies\n  body: *label\nadditional_dependencies: [sphinx>=9]\n",
+        encoding="utf-8",
+    )
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "sphinx==9.1\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert config.read_text(encoding="utf-8").startswith("ci:\n  label: &label dependencies\n  body: *label\n")
+    assert safe_load(config.read_text(encoding="utf-8"))["additional_dependencies"] == ["sphinx>=9", "sphinx==9.1"]
+
+
+def test_rejects_hook_merge_with_hidden_dependencies(tmp_path: Path) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    source = (
+        "repos:\n  - repo: local\n    hooks:\n"
+        "      - &base\n        id: source\n        name: source\n        entry: true\n"
+        "        language: system\n        additional_dependencies: [sphinx>=9]\n"
+        "      - <<: *base\n        id: docs\n        name: docs\n"
+        "        entry: python -m sphinx\n        language: python\n"
+    )
+    config.write_text(source, encoding="utf-8")
+    assert safe_load(source)["repos"][0]["hooks"][1]["additional_dependencies"] == ["sphinx>=9"]
+
+    with pytest.raises(ValueError, match="YAML merge keys in hook definitions"):
+        update_pins(config, "7 days", "3.15")
+
+    assert config.read_text(encoding="utf-8") == source
+
+
+def test_rejects_repository_merge_with_hidden_source(tmp_path: Path, upstream_python_hook: tuple[Path, str]) -> None:
+    upstream, revision = upstream_python_hook
+    config = tmp_path / ".pre-commit-config.yaml"
+    source = (
+        f"repos:\n  - &remote\n    repo: {upstream.as_uri()}\n    rev: {revision}\n    hooks: []\n"
+        "  - <<: *remote\n    hooks:\n      - id: lint\n        additional_dependencies: [click==8]\n"
+    )
+    config.write_text(source, encoding="utf-8")
+    assert safe_load(source)["repos"][1]["repo"] == upstream.as_uri()
+
+    with pytest.raises(ValueError, match="YAML merge keys in repository definitions"):
+        update_pins(config, "7 days", "3.15")
+
+    assert config.read_text(encoding="utf-8") == source
+
+
+def test_keeps_flow_dependencies_with_a_trailing_managed_comment(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text("additional_dependencies: [packaging==26, click==8] # release-creator managed\n")
+    mocker.patch("release_creator.process.shutil.which", return_value="/usr/bin/uv")
+    mocker.patch(
+        "release_creator.hooks.update.run_text",
+        return_value=subprocess.CompletedProcess([], 0, "packaging==26\nclick==8\n", ""),
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert safe_load(config.read_text(encoding="utf-8"))["additional_dependencies"] == ["packaging==26", "click==8"]
+
+
+@pytest.mark.parametrize(
+    "duplicate",
+    [
+        pytest.param(
+            "additional_dependencies: [safe==1]\n        additional_dependencies: [untrusted]", id="dependencies"
+        ),
+        pytest.param("language: system\n        language: python", id="language"),
+    ],
+)
+def test_rejects_duplicate_hook_keys(tmp_path: Path, mocker: MockerFixture, duplicate: str) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    source = f"repos:\n  - repo: local\n    hooks:\n      - id: check\n        {duplicate}\n"
+    config.write_text(source, encoding="utf-8")
+    run = mocker.patch("release_creator.hooks.update.run_text")
+
+    with pytest.raises(ValueError, match="duplicate YAML key"):
+        update_pins(config, "7 days", "3.15")
+
+    assert config.read_text(encoding="utf-8") == source
+    run.assert_not_called()
+
+
+def test_rejects_non_scalar_yaml_key(tmp_path: Path, mocker: MockerFixture) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    source = "? [unsafe, key]\n: value\nadditional_dependencies: [black==1]\n"
+    config.write_text(source, encoding="utf-8")
+    run = mocker.patch("release_creator.hooks.update.run_text")
+
+    with pytest.raises(TypeError, match="keys must be YAML scalars"):
+        update_pins(config, "7 days", "3.15")
+
+    assert config.read_text(encoding="utf-8") == source
+    run.assert_not_called()
 
 
 def test_rejects_resolver_failure(tmp_path: Path, mocker: MockerFixture) -> None:

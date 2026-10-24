@@ -27,6 +27,7 @@ classifiers = [
 dynamic = [ "readme", "version" ]
 dependencies = [
   "docutils>=0.22",
+  "markdown-it-py>=4,<5",
   "mdformat>=1,<2",
   "mdformat-gfm>=1,<2",
   "packaging>=26",
@@ -61,7 +62,6 @@ docs = [
   "sphinxcontrib-mermaid>=2.1.1",
 ]
 fix = [ "prek>=0.2" ]
-lock-tools = [ "nab==0.0.22" ]
 pkg-meta = [ "check-wheel-contents>=0.6.3", "twine>=7", "uv>=0.12.22" ]
 release-check = [ "prek>=0.2" ]
 release-notes = []
@@ -149,7 +149,3 @@ uploaded-prior-to = "P7D"
 decision-order = "stable"
 matrix.python = ">=3.15,<3.16"
 matrix.platforms = [ "linux_x86_64", "linux_aarch64", "macos_arm64", "windows_amd64" ]
-
-[[tool.nab.package-rules]]
-match = [ "nab", "nab-index", "nab-markersets", "nab-project", "nab-provider", "nab-resolver" ]
-uploaded-prior-to = "2026-10-19T00:00:00Z"
