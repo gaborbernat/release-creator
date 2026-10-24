@@ -3,6 +3,19 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-1-0-1:
+
+1.0.1 (2026-10-24)
+------------------
+
+.. _release-1-0-1-security:
+
+Security
+~~~~~~~~
+
+- Keep the required pull request check distinct from dispatch and push checks, so a skipped hook cooldown cannot satisfy
+  branch protection (:pr:`30`) by :user:`gaborbernat`.
+
 .. _release-1-0-0:
 
 1.0.0 (2026-10-24)
