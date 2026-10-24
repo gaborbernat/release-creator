@@ -3,6 +3,36 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-1-1-0:
+
+1.1.0 (2026-10-24)
+------------------
+
+.. _release-1-1-0-added:
+
+Added
+~~~~~
+
+- Check proposed pre-commit hook dependency pins without changing the configuration (:pr:`31`) by :user:`gaborbernat`.
+- Export one selectable pylock.toml for a project's runtime dependencies, groups, extras, Python range, and platforms
+  (:pr:`31`) by :user:`gaborbernat`.
+
+.. _release-1-1-0-fixed:
+
+Fixed
+~~~~~
+
+- Ignore contextual pull request URLs when checking a changelog entry's linked author credit (:pr:`31`) by
+  :user:`gaborbernat`.
+
+.. _release-1-1-0-removed:
+
+Removed
+~~~~~~~
+
+- Remove the unused package changelog CLI mode while keeping ``render_preview`` for Python callers (:pr:`31`) by
+  :user:`gaborbernat`.
+
 .. _release-1-0-1:
 
 1.0.1 (2026-10-24)
