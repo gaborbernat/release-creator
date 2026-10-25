@@ -172,6 +172,23 @@ def test_resolves_real_universal_closure(
     ]
 
 
+def test_real_uv_accepts_hook_resolution_arguments(tmp_path: Path) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "repos:\n  - repo: local\n    hooks:\n      - id: lint\n        language: python\n"
+        '        additional_dependencies: ["packaging>=24,<24.3"]\n',
+        encoding="utf-8",
+    )
+
+    update_pins(config, "7 days", "3.15")
+
+    assert safe_load(config.read_text(encoding="utf-8"))["repos"][0]["hooks"][0]["additional_dependencies"] == [
+        "packaging>=24,<24.3",
+        "packaging==24.2",
+    ]
+    check_pins(config, "7 days", "3.15")
+
+
 def test_ignores_ambient_uv_resolution_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
 ) -> None:
@@ -208,9 +225,23 @@ def test_ignores_ambient_uv_resolution_settings(
     assert safe_load(config.read_text(encoding="utf-8"))["repos"][0]["hooks"][0]["additional_dependencies"] == [
         "packaging==26.1"
     ]
-    assert execute.call_args.args[0][execute.call_args.args[0].index("--default-index") + 1] == (
-        "https://pypi.org/simple/"
-    )
+    assert execute.call_args.args[0] == [
+        "uv",
+        "pip",
+        "compile",
+        "-",
+        "--universal",
+        "--quiet",
+        "--no-header",
+        "--no-annotate",
+        "--no-config",
+        "--no-sources",
+        "--exclude-newer",
+        "7 days",
+        "--python-version",
+        "3.15",
+    ]
+    assert execute.call_args.kwargs["input"] == "packaging\n"
     assert all("evil.invalid" not in value for value in execute.call_args.kwargs["env"].values())
 
 
@@ -343,6 +374,28 @@ def test_rejects_unpinned_hook_resolution(tmp_path: Path, mocker: MockerFixture,
         update_pins(config, "7 days", "3.15")
 
     assert config.read_text(encoding="utf-8") == source
+
+
+@pytest.mark.parametrize(
+    "managed",
+    [
+        pytest.param('"requests[socks]==2.34.2"', id="extras"),
+        pytest.param("\"pysocks==1.7.1; extra == 'socks'\"", id="extra-marker"),
+    ],
+)
+def test_check_rejects_managed_pin_with_extras(tmp_path: Path, mocker: MockerFixture, managed: str) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "repos:\n  - repo: local\n    hooks:\n      - id: a\n        language: python\n"
+        f"        additional_dependencies:\n          - requests>=2\n          - {managed} # release-creator managed\n",
+        encoding="utf-8",
+    )
+    run = mocker.patch("release_creator.process.subprocess.run", autospec=True)
+
+    with pytest.raises(ValueError, match="managed hook dependency must not select extras"):
+        check_pins(config, "7 days", "3.15")
+
+    run.assert_not_called()
 
 
 @pytest.fixture
@@ -652,8 +705,9 @@ def test_adds_hook_dependencies_after_block_scalar(
     assert config.read_text(encoding="utf-8") == first
 
 
-def test_preserves_system_hook_dependencies(
-    tmp_path: Path, mocker: MockerFixture, upstream_python_hook: tuple[Path, str]
+@pytest.mark.parametrize("check", [pytest.param(True, id="check"), pytest.param(False, id="update")])
+def test_rejects_dependencies_on_manifest_system_hook(
+    tmp_path: Path, upstream_python_hook: tuple[Path, str], check: bool
 ) -> None:
     upstream, _ = upstream_python_hook
     (upstream / ".pre-commit-hooks.yaml").write_text(
@@ -682,15 +736,15 @@ def test_preserves_system_hook_dependencies(
         '        additional_dependencies:\n          - "click==8" # release-creator managed\n'
     )
     config.write_text(source, encoding="utf-8")
-    command = mocker.spy(process.subprocess, "run")
 
-    update_pins(config, "7 days", "3.15")
+    with pytest.raises(ValueError, match="only supported for Python hooks: lint uses system"):
+        (check_pins if check else update_pins)(config, "7 days", "3.15")
 
     assert config.read_text(encoding="utf-8") == source
-    assert all(call.args[0][0] != "uv" for call in command.call_args_list)
 
 
-def test_ignores_non_python_hook_dependencies(tmp_path: Path) -> None:
+@pytest.mark.parametrize("check", [pytest.param(True, id="check"), pytest.param(False, id="update")])
+def test_rejects_dependencies_on_configured_node_hook(tmp_path: Path, check: bool) -> None:
     config = tmp_path / ".pre-commit-config.yaml"
     source = (
         "repos:\n  - repo: local\n    hooks:\n      - id: xml\n"
@@ -698,7 +752,8 @@ def test_ignores_non_python_hook_dependencies(tmp_path: Path) -> None:
     )
     config.write_text(source, encoding="utf-8")
 
-    update_pins(config, "7 days", "3.15")
+    with pytest.raises(ValueError, match="only supported for Python hooks: xml uses node"):
+        (check_pins if check else update_pins)(config, "7 days", "3.15")
 
     assert config.read_text(encoding="utf-8") == source
 
@@ -1245,6 +1300,7 @@ def test_explicit_python3_uses_runner_version(tmp_path: Path, mocker: MockerFixt
     [
         pytest.param("python3", "3.15", id="interpreter-major"),
         pytest.param("default", "3.15", id="default"),
+        pytest.param("python3.14t", "3.14", id="free-threaded"),
     ],
 )
 def test_resolves_generic_python_hook_version(
@@ -1301,6 +1357,11 @@ def test_rejects_unsupported_hook_python_version(tmp_path: Path) -> None:
             "      - id: second\n        language: python\n        additional_dependencies: [*dep]\n",
             id="shared-scalar",
         ),
+        pytest.param(
+            "vars:\n  - &dep requests<3\nrepos:\n  - repo: local\n    hooks:\n"
+            "      - id: first\n        language: python\n        additional_dependencies:\n          - *dep\n",
+            id="alias-only-list",
+        ),
     ],
 )
 def test_rejects_aliased_hook_configuration(tmp_path: Path, mocker: MockerFixture, source: str) -> None:
@@ -1317,6 +1378,32 @@ def test_rejects_aliased_hook_configuration(tmp_path: Path, mocker: MockerFixtur
         update_pins(config, "7 days", "3.15")
 
     assert config.read_text(encoding="utf-8") == source
+
+
+@pytest.mark.parametrize(
+    "hooks",
+    [
+        pytest.param("    hooks: &h\n      - id: x\n        additional_dependencies: []\n", id="hook-list"),
+        pytest.param("    hooks:\n      - &h\n        id: x\n        additional_dependencies: []\n", id="hook-mapping"),
+    ],
+)
+@pytest.mark.parametrize("check", [pytest.param(True, id="check"), pytest.param(False, id="update")])
+def test_rejects_hooks_shared_between_repositories(
+    tmp_path: Path, mocker: MockerFixture, hooks: str, check: bool
+) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    shared = "*h" if "hooks: &h" in hooks else "[*h]"
+    config.write_text(
+        f"repos:\n  - repo: https://example.invalid/first\n    rev: {'0' * 40}\n{hooks}"
+        f"  - repo: https://example.invalid/second\n    rev: {'0' * 40}\n    hooks: {shared}\n",
+        encoding="utf-8",
+    )
+    run = mocker.patch("release_creator.process.subprocess.run", autospec=True)
+
+    with pytest.raises(ValueError, match="YAML aliases cannot share hook definitions"):
+        (check_pins if check else update_pins)(config, "7 days", "3.15")
+
+    run.assert_not_called()
 
 
 def test_updates_hook_with_unrelated_yaml_alias(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -1370,6 +1457,23 @@ def test_rejects_repository_merge_with_hidden_source(tmp_path: Path, upstream_py
         update_pins(config, "7 days", "3.15")
 
     assert config.read_text(encoding="utf-8") == source
+
+
+@pytest.mark.parametrize("check", [pytest.param(True, id="check"), pytest.param(False, id="update")])
+def test_rejects_root_merge_hiding_repositories(tmp_path: Path, mocker: MockerFixture, check: bool) -> None:
+    config = tmp_path / ".pre-commit-config.yaml"
+    source = (
+        f"x-base: &base\n  repos:\n    - repo: https://example.invalid/hook\n      rev: {'0' * 40}\n"
+        "      hooks:\n        - id: x\n<<: *base\n"
+    )
+    config.write_text(source, encoding="utf-8")
+    assert safe_load(source)["repos"][0]["repo"] == "https://example.invalid/hook"
+    run = mocker.patch("release_creator.process.subprocess.run", autospec=True)
+
+    with pytest.raises(ValueError, match="YAML merge keys in the configuration root"):
+        (check_pins if check else update_pins)(config, "7 days", "3.15")
+
+    run.assert_not_called()
 
 
 def test_keeps_flow_dependencies_with_a_trailing_managed_comment(tmp_path: Path, mocker: MockerFixture) -> None:

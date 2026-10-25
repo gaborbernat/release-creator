@@ -12,12 +12,13 @@ lazy from urllib.parse import urlsplit
 
 lazy import mdformat
 lazy from markdown_it import MarkdownIt
+lazy from markdown_it.token import Token
 lazy from packaging.version import InvalidVersion, Version
 
 lazy from release_creator.anchors.names import release_anchor
 lazy from release_creator.categories import RELEASE_CATEGORIES
-lazy from release_creator.github import MARKDOWN_AUTHOR, validate_repository
-lazy from release_creator.notes.rst import render_rst_section
+lazy from release_creator.github import validate_repository
+lazy from release_creator.notes.rst import TILDE_PLACEHOLDER, render_rst_section
 
 _RE_RELEASE_PULL: Final = re.compile(
     r"""
@@ -32,112 +33,6 @@ _RE_RELEASE_PULL: Final = re.compile(
         (?P<kind>pull|issues)/  # GitHub also serves PRs at their issue URL
     )
     (?P<number>\d+)
-    """,
-    re.VERBOSE | re.IGNORECASE,
-)
-_RE_GITHUB_CREDIT: Final = re.compile(
-    r"""
-    \s(?:-\s)?by\s+  # Candidate author credit
-    """,
-    re.VERBOSE,
-)
-_RE_GITHUB_HANDLE: Final = re.compile(
-    r"""
-    @(?P<handle>[A-Za-z0-9-]+)   # GitHub mention
-    """,
-    re.VERBOSE,
-)
-_RE_PROFILE_LABEL: Final = re.compile(
-    r"""
-    @(?P<handle>[A-Za-z0-9-]+)  # Displayed GitHub handle
-    """,
-    re.VERBOSE,
-)
-_RE_GITHUB_PATH: Final = re.compile(
-    r"""
-    ^/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)  # Owner and repository
-    /(?P<kind>pull|issues)/(?P<number>\d+)             # Pull request or issue route
-    (?:/|$)                                             # Optional subpath
-    """,
-    re.VERBOSE,
-)
-_RE_PULL_LABEL: Final = re.compile(
-    r"""
-    (?:PR\ \#?|\#)(?P<number>\d+)  # Displayed pull request number
-    """,
-    re.VERBOSE | re.IGNORECASE,
-)
-_RE_CREDIT_HANDLES: Final = re.compile(
-    r"""
-    ^\s*(?P<handles>
-        @[A-Za-z0-9-]+  # First credited author
-        (?:(?:\s*,\s*|\s+and\s+)@[A-Za-z0-9-]+)*  # Additional authors
-    )
-    (?:[.,;)\s]|$)  # Credit ends before other prose
-    """,
-    re.VERBOSE,
-)
-_RE_GENERATED_PR_AUTHOR: Final = re.compile(
-    r"""
-    \bby\s+@(?P<handle>[A-Za-z0-9-]+)  # GitHub generated PR author
-    (?P<bot>\[bot\])?                 # Bot accounts are not credited
-    \s+in\s+https://github\.com/
-    (?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)  # Repository in the generated link
-    /pull/(?P<number>\d+)              # Pull request number
-    \s*$                                # Actual credit follows the entire title
-    """,
-    re.VERBOSE,
-)
-_RE_GENERATED_PR_LINK: Final = re.compile(
-    r"""
-    \bin\s+https://github\.com/
-    (?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)  # GitHub repository
-    /pull/(?P<number>\d+)                            # Final PR on the generated line
-    \s*$                                               # End of generated line
-    """,
-    re.VERBOSE,
-)
-_RE_RST_VERSION: Final = re.compile(
-    r"""
-    ^(?:
-        (?P<tag>v?[A-Za-z0-9.+-]+)\ \((?P<date>[^)]+)\)  # Version and date
-        |
-        `(?P<link_tag>v?[A-Za-z0-9.+-]+)\ <https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/
-        (?P=link_tag)>`_(?:\ -\ (?P<link_date>\d{4}-\d{2}-\d{2}))?  # Linked version, with optional date
-    )$
-    """,
-    re.VERBOSE,
-)
-_RE_MARKDOWN_VERSION: Final = re.compile(
-    r"""
-    ^(?P<level>\#{2,3})\          # Markdown version heading level
-    (?P<open>\[)?                   # Optional Keep a Changelog link bracket
-    (?P<tag>v?[A-Za-z0-9.+-]+)  # Release version; Version validates its syntax
-    (?(open)\])                     # Close the optional bracket
-    (?:\ \([^)]+\)|\ -\ [^\n]+)? # Parenthesized or dash-separated date
-    $                               # End of heading
-    """,
-    re.VERBOSE,
-)
-_RE_MARKDOWN_VERSION_ANCHOR: Final = re.compile(
-    r"""
-    ^<a\ name="release-             # Version anchor prefix
-    (?P<version>v?[A-Za-z0-9_.-]+)  # Version encoded for an anchor
-    "></a>$                         # Anchor terminator
-    """,
-    re.VERBOSE,
-)
-_RE_MARKDOWN_ANCHOR: Final = re.compile(
-    r"""
-    ^<a\ name="(?P<anchor>release-[A-Za-z0-9_-]+)"></a>$  # Complete release or category anchor
-    """,
-    re.VERBOSE,
-)
-_RE_MARKDOWN_LINK_DEFINITION: Final = re.compile(
-    r"""
-    ^\[(?P<version>v?[A-Za-z0-9.+-]+|unreleased)\]:  # Version reference
-    \s+https://github\.com/[^\s]+                    # GitHub destination
-    $                                                   # End of definition
     """,
     re.VERBOSE | re.IGNORECASE,
 )
@@ -182,8 +77,11 @@ def render_rst(changelog: str, context: ReleaseContext, generated_notes: str | N
     if context.package is not None:
         msg = "package selection requires a Markdown changelog"
         raise ValueError(msg)
-    notes = mdformat.text(_extract_rst_body(changelog, context), options={"wrap": "no"}, extensions={"gfm"}).strip()
-    return _finish(notes, context, generated_notes)
+    if TILDE_PLACEHOLDER in changelog:
+        msg = "changelog contains a private-use character reserved for escaping"
+        raise ValueError(msg)
+    notes = mdformat.text(_extract_rst_body(changelog, context), options={"wrap": "no"}, extensions={"gfm"})
+    return _finish(notes.strip().replace(TILDE_PLACEHOLDER, "\\~"), context, generated_notes)
 
 
 def _finish(notes: str, context: ReleaseContext, generated_notes: str | None) -> str:
@@ -233,11 +131,31 @@ def _generated_pr_authors(generated_notes: str, repository: str) -> tuple[dict[s
             in_new_contributors = line.removeprefix("### ").removeprefix("## ") == "New Contributors"
         if in_new_contributors:
             continue
-        if (link := _RE_GENERATED_PR_LINK.search(line)) is None or link[
-            "repository"
-        ].casefold() != repository.casefold():
+        if (
+            link := re.search(
+                r"""
+                \bin\s+https://github\.com/
+                (?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)  # GitHub repository
+                /pull/(?P<number>\d+)                            # Final PR on the generated line
+                \s*$                                               # End of generated line
+                """,
+                line,
+                flags=re.VERBOSE,
+            )
+        ) is None or link["repository"].casefold() != repository.casefold():
             continue
-        match = _RE_GENERATED_PR_AUTHOR.search(line)
+        match = re.search(
+            r"""
+            \bby\s+@(?P<handle>[A-Za-z0-9-]+)  # GitHub generated PR author
+            (?P<bot>\[bot\])?                 # Bot accounts are not credited
+            \s+in\s+https://github\.com/
+            (?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)  # Repository in the generated link
+            /pull/(?P<number>\d+)              # Pull request number
+            \s*$                                # Actual credit follows the entire title
+            """,
+            line,
+            flags=re.VERBOSE,
+        )
         number = link["number"]
         author = None if match is None or match["bot"] is not None else match["handle"]
         if match is not None and match["bot"] is not None:
@@ -283,71 +201,116 @@ def _shared_credit_group(line: str, first: re.Match[str], second: re.Match[str])
 
 
 def _visible_lines(notes: str, repository: str) -> Iterator[str]:
-    parser = _RawHtmlLinkParser()
+    items: list[list[str]] = []
     for token in MarkdownIt().parse(notes):
-        if token.type == "html_block":
-            parser.feed(token.content)
-            yield from parser.take_text().splitlines()
-        if token.type != "inline":
-            continue
-        parts: list[str] = []
-        children = token.children or []
-        index = 0
-        while index < len(children):
-            child = children[index]
-            if child.type == "link_open":
-                end = next(
-                    position for position in range(index + 1, len(children)) if children[position].type == "link_close"
-                )
-                label = "".join(
-                    item.content for item in children[index + 1 : end] if item.type in {"text", "code_inline"}
-                )
-                parts.append(_visible_link(label, str(child.attrGet("href") or ""), repository))
-                index = end
-            elif child.type == "text":
-                parts.append(child.content)
-            elif child.type in {"softbreak", "hardbreak"}:
-                parts.append(" " if child.type == "softbreak" else "\n")
-            elif child.type == "html_inline":
-                parser.feed(child.content)
-                parts.append(parser.take_text())
-            elif child.type == "code_inline":
-                parts.append(" ")
-            index += 1
-        yield from "".join(parts).splitlines()
+        if token.type == "list_item_open":
+            items.append([])
+        elif token.type == "list_item_close":
+            yield " ".join(items.pop())
+        elif token.type == "html_block":
+            yield from _html_text(token.content).splitlines()
+        elif token.type == "inline":
+            line = _visible_inline(token.children or [], repository)
+            if items:
+                items[-1].append(line)
+            else:
+                yield line
+
+
+def _visible_inline(children: list[Token], repository: str) -> str:
+    parts: list[str] = []
+    index = 0
+    while index < len(children):
+        child = children[index]
+        if child.type == "html_inline":
+            parts.append(_html_text(child.content))
+        elif child.type == "link_open":
+            end = next(
+                position for position in range(index + 1, len(children)) if children[position].type == "link_close"
+            )
+            label = "".join(item.content for item in children[index + 1 : end] if item.type in {"text", "code_inline"})
+            parts.append(_visible_link(label, str(child.attrGet("href") or ""), repository))
+            index = end
+        elif child.type == "text":
+            parts.append(child.content)
+        elif child.type in {"softbreak", "hardbreak"} or child.type == "code_inline":
+            parts.append(" ")
+        index += 1
+    return "".join(parts)
+
+
+def _html_text(content: str) -> str:
+    # Each HTML token must be complete: a comment left open here hides the Markdown that follows it on GitHub.
+    parser = _RawHtmlParser()
+    parser.feed(content)
+    if parser.rawdata:
+        msg = "incomplete HTML markup in release notes"
+        raise ValueError(msg)
+    parser.close()
+    return parser.text()
 
 
 def _visible_link(label: str, url: str, repository: str) -> str:
-    if (profile := _RE_PROFILE_LABEL.fullmatch(label)) is not None:
-        parsed = urlsplit(url)
-        handle = profile["handle"].casefold()
+    parsed = urlsplit(url)
+    on_github = parsed.scheme == "https" and parsed.netloc.casefold() in {"github.com", "www.github.com"}
+    if on_github and ({".", ".."} & set(parsed.path.split("/")) or "%" in parsed.path):
+        msg = f"GitHub link has a relative or encoded path: {url}"
+        raise ValueError(msg)
+    profile_label = re.compile(
+        r"""
+        @(?P<handle>[A-Za-z0-9-]+)  # Displayed GitHub handle
+        """,
+        re.VERBOSE,
+    )
+    if profile_label.search(label) is not None:
+        profile = profile_label.fullmatch(label.strip())
+        handle = profile["handle"].casefold() if profile is not None else ""
         if (
-            parsed.scheme != "https"
-            or parsed.netloc.casefold() not in {"github.com", "www.github.com"}
+            profile is None
+            or not on_github
             or parsed.path.casefold() not in {f"/{handle}", f"/{handle}/"}
             or parsed.query
             or parsed.fragment
         ):
-            msg = f"GitHub credit link for @{profile['handle']} points to another profile"
+            msg = f"GitHub credit link for {label.strip()} points to another profile"
             raise ValueError(msg)
         return label
-    parsed = urlsplit(url)
-    path = _RE_GITHUB_PATH.match(parsed.path)
-    github_pull = (
-        parsed.scheme == "https" and parsed.netloc.casefold() in {"github.com", "www.github.com"} and path is not None
+    path = (
+        re.match(
+            r"""
+            ^/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)  # Owner and repository
+            /(?P<kind>pull|issues)/(?P<number>\d+)             # Pull request or issue route
+            (?:/|$)                                             # Optional subpath
+            """,
+            parsed.path,
+            flags=re.VERBOSE,
+        )
+        if on_github
+        else None
     )
-    current_pull = github_pull and path is not None and path["repository"].casefold() == repository.casefold()
-    number = _RE_PULL_LABEL.fullmatch(label)
+    target = (path["repository"].casefold(), path["number"]) if path is not None else None
+    shown = {
+        ((match["repository"] or match["short_repository"] or repository).casefold(), match["number"])
+        for match in _RE_RELEASE_PULL.finditer(label)
+    }
     if (
-        number is not None
-        and not (github_pull and not current_pull)
-        and (not current_pull or number["number"] != path["number"])
-    ):
-        destination = path["number"] if current_pull else "another URL"
-        msg = f"pull request label #{number['number']} points to #{destination}"
+        number := re.fullmatch(
+            r"""
+            (?:PR\ \#?|\#)(?P<number>\d+)  # Displayed pull request number
+            """,
+            label,
+            flags=re.VERBOSE | re.IGNORECASE,
+        )
+    ) is not None:
+        shown.add((repository.casefold(), number["number"]))
+    if mismatch := sorted(shown - {target}):
+        destination = (
+            f"#{path['number']}" if path is not None and target == (repository.casefold(), path["number"]) else url
+        )
+        msg = f"pull request label #{mismatch[0][1]} points to {destination}"
         raise ValueError(msg)
-    if not current_pull:
-        return " "
+    if path is None or target != (repository.casefold(), path["number"]):
+        return f" {label} "
     return f" https://github.com/{repository}/{path['kind']}/{path['number']} "
 
 
@@ -407,7 +370,13 @@ def _reference_in_url(line: str, match: re.Match[str]) -> bool:
 
 
 def _entry_credit(text: str, *, named: bool) -> tuple[set[str], bool] | None:
-    for marker in _RE_GITHUB_CREDIT.finditer(text):
+    for marker in re.finditer(
+        r"""
+        \s(?:-\s)?by\s+  # Candidate author credit
+        """,
+        text,
+        flags=re.VERBOSE,
+    ):
         prefix = text[: marker.start()].strip()
         if named and prefix.strip("(),;.-"):
             continue
@@ -415,8 +384,30 @@ def _entry_credit(text: str, *, named: bool) -> tuple[set[str], bool] | None:
             continue
         credit_text = text[marker.end() :]
         handles = (
-            {str(item.group("handle")).casefold() for item in _RE_GITHUB_HANDLE.finditer(match["handles"])}
-            if (match := _RE_CREDIT_HANDLES.match(credit_text)) is not None
+            {
+                str(item.group("handle")).casefold()
+                for item in re.finditer(
+                    r"""
+                    @(?P<handle>[A-Za-z0-9-]+)   # GitHub mention
+                    """,
+                    match["handles"],
+                    flags=re.VERBOSE,
+                )
+            }
+            if (
+                match := re.match(
+                    r"""
+                    ^\s*(?P<handles>
+                        @[A-Za-z0-9-]+  # First credited author
+                        (?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)@[A-Za-z0-9-]+)*  # Additional authors
+                    )
+                    (?:[.,;:)\s]|$)  # Credit ends before other prose or an RST literal marker
+                    """,
+                    credit_text,
+                    flags=re.VERBOSE,
+                )
+            )
+            is not None
             else set[str]()
         )
         plain_name = credit_text.strip(" .()")
@@ -482,9 +473,7 @@ def _extract_rst_body(changelog: str, context: ReleaseContext) -> str:
         (index for index in range(headings[0] + 1, len(lines)) if _rst_version_at(lines, index) is not None),
         len(lines),
     )
-    start = headings[0] + 1
-    if start < end and _is_rst_adornment(lines[start]):
-        start += 1
+    start = headings[0] + 2
     if end < len(lines) and _is_rst_adornment(lines[end - 1]):
         end -= 1
     return render_rst_section("\n".join(lines[start:end]), context.tag, context.repository)
@@ -492,16 +481,24 @@ def _extract_rst_body(changelog: str, context: ReleaseContext) -> str:
 
 def _rst_version_at(lines: list[str], index: int) -> re.Match[str] | None:
     line = lines[index]
+    if not any(map(_is_rst_adornment, lines[index + 1 : index + 2])):
+        return None
     if line[:1].isspace() and not (
-        line.startswith(" ")
-        and not line.startswith("  ")
-        and index > 0
-        and index + 1 < len(lines)
-        and _is_rst_adornment(lines[index - 1])
-        and _is_rst_adornment(lines[index + 1])
+        line.startswith(" ") and not line.startswith("  ") and index > 0 and _is_rst_adornment(lines[index - 1])
     ):
         return None
-    match = _RE_RST_VERSION.fullmatch(line.strip())
+    match = re.fullmatch(
+        r"""
+        ^(?:
+            (?P<tag>v?[A-Za-z0-9.+-]+)\ \((?P<date>[^)]+)\)  # Version and date
+            |
+            `(?P<link_tag>v?[A-Za-z0-9.+-]+)\ <https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/
+            (?P=link_tag)>`_(?:\ -\ (?P<link_date>\d{4}-\d{2}-\d{2}))?  # Linked version, with optional date
+        )$
+        """,
+        line.strip(),
+        flags=re.VERBOSE,
+    )
     return match if match is not None and _is_version(match["tag"] or match["link_tag"]) else None
 
 
@@ -546,7 +543,17 @@ def _extract_body(changelog: str, context: ReleaseContext) -> str:
         for line in changelog.splitlines()
         if not _is_comparison_line(line)
         and not (
-            (match := _RE_MARKDOWN_LINK_DEFINITION.fullmatch(line))
+            (
+                match := re.fullmatch(
+                    r"""
+                    ^\[(?P<version>v?[A-Za-z0-9.+-]+|unreleased)\]:  # Version reference
+                    \s+https://github\.com/[^\s]+                    # GitHub destination
+                    $                                                   # End of definition
+                    """,
+                    line,
+                    flags=re.VERBOSE | re.IGNORECASE,
+                )
+            )
             and (match["version"].lower() == "unreleased" or _is_version(match["version"]))
         )
     ]
@@ -561,10 +568,21 @@ def _extract_body(changelog: str, context: ReleaseContext) -> str:
         )
         lines = lines[packages[0] + 1 : end]
     version = context.tag.rsplit("/", 1)[-1].removeprefix("v")
+    markdown_version = re.compile(
+        r"""
+        ^(?P<level>\#{2,3})\          # Markdown version heading level
+        (?P<open>\[)?                   # Optional Keep a Changelog link bracket
+        (?P<tag>v?[A-Za-z0-9.+-]+)  # Release version; Version validates its syntax
+        (?(open)\])                     # Close the optional bracket
+        (?:\ \([^)]+\)|\ -\ [^\n]+)? # Parenthesized or dash-separated date
+        $                               # End of heading
+        """,
+        re.VERBOSE,
+    )
     headings = [
         index
         for index, line in enumerate(lines)
-        if (match := _RE_MARKDOWN_VERSION.fullmatch(line))
+        if (match := markdown_version.fullmatch(line))
         and _is_version(match["tag"])
         and match["level"] == heading_level
         and match["tag"].removeprefix("v") == version
@@ -576,7 +594,7 @@ def _extract_body(changelog: str, context: ReleaseContext) -> str:
     body: list[str] = []
     for source_line in lines[headings[0] + 1 :]:
         if (
-            (match := _RE_MARKDOWN_VERSION.fullmatch(source_line)) is not None
+            (match := markdown_version.fullmatch(source_line)) is not None
             and _is_version(match["tag"])
             and match["level"] == heading_level
         ) or _is_version_anchor(source_line, context.package):
@@ -586,7 +604,17 @@ def _extract_body(changelog: str, context: ReleaseContext) -> str:
 
 
 def _is_version_anchor(line: str, package: str | None) -> bool:
-    if (match := _RE_MARKDOWN_VERSION_ANCHOR.fullmatch(line)) is None:
+    if (
+        match := re.fullmatch(
+            r"""
+            ^<a\ name="release-             # Version anchor prefix
+            (?P<version>v?[A-Za-z0-9_.-]+)  # Version encoded for an anchor
+            "></a>$                         # Anchor terminator
+            """,
+            line,
+            flags=re.VERBOSE,
+        )
+    ) is None:
         return False
     version = match["version"]
     if package is not None:
@@ -624,12 +652,19 @@ def _convert_markdown_body(lines: list[str], category_prefix: str) -> str:
             category_has_item = True
         elif (
             source_line.strip()
-            and _RE_MARKDOWN_ANCHOR.fullmatch(source_line) is None
+            and re.fullmatch(
+                r"""
+                ^<a\ name="(?P<anchor>release-[A-Za-z0-9_-]+)"></a>$  # Complete release or category anchor
+                """,
+                source_line,
+                flags=re.VERBOSE,
+            )
+            is None
             and (not in_item or not source_line[0].isspace())
         ):
             msg = f"release text outside an item: {source_line}"
             raise ValueError(msg)
-        body.append(MARKDOWN_AUTHOR.sub(lambda match: f"@{match['handle']}", line))
+        body.append(line)
 
     if in_category and not category_has_item:
         msg = "empty changelog category"
@@ -638,15 +673,13 @@ def _convert_markdown_body(lines: list[str], category_prefix: str) -> str:
     return "\n".join(body).strip()
 
 
-class _RawHtmlLinkParser(HTMLParser):
+class _RawHtmlParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self._text: list[str] = []
 
-    def take_text(self) -> str:
-        content = "".join(self._text)
-        self._text.clear()
-        return content
+    def text(self) -> str:
+        return "".join(self._text)
 
     @override
     def handle_data(self, data: str) -> None:
@@ -657,6 +690,11 @@ class _RawHtmlLinkParser(HTMLParser):
         if tag == "a" and any(name == "href" for name, _ in attrs):
             msg = "raw HTML links are unsupported in release notes"
             raise ValueError(msg)
+        if tag in {"details", "summary"}:
+            msg = "collapsible HTML sections are unsupported in release notes"
+            raise ValueError(msg)
+        if tag in {"br", "hr"}:
+            self._text.append(" ")
 
 
 def _is_comparison_line(line: str) -> bool:
