@@ -3,6 +3,30 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-3-2-0:
+
+3.2.0 (2026-10-25)
+------------------
+
+.. _release-3-2-0-added:
+
+Added
+~~~~~
+
+- Add ``--package`` to ``contributors``. It finds the version section inside the ``## <package>`` section of a shared
+  Markdown changelog the same way ``notes --package`` does, and gives the New Contributors subsection that package's
+  ``####`` heading and anchor (:pr:`35`) by :user:`gaborbernat`.
+
+.. _release-3-2-0-fixed:
+
+Fixed
+~~~~~
+
+- ``notes --package`` and ``contributors --package`` keep a package version anchor that sits directly after its own
+  version heading inside that version's section. Before, the anchor ended the section, so ``notes`` rendered toml-fmt
+  releases with only the Full Changelog link. ``notes`` leaves the version anchor out of the release body, which starts
+  at the first category anchor (:pr:`35`) by :user:`gaborbernat`.
+
 .. _release-3-1-0:
 
 3.1.0 (2026-10-25)
