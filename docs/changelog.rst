@@ -3,6 +3,52 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-3-1-0:
+
+3.1.0 (2026-10-25)
+------------------
+
+.. _release-3-1-0-added:
+
+Added
+~~~~~
+
+- Add the ``contributors`` command. After ``towncrier build``, it appends a ``New Contributors`` subsection to the new
+  version's section for each pull request author, other than bots and AI assistants, whose first merged pull request in
+  the repository is in this release. ``notes`` renders that subsection last in the GitHub Release body (:pr:`34`) by
+  :user:`gaborbernat`.
+- Restore the 2.0.0 ``fragments``, ``validate-news``, ``changelog`` and ``anchors`` commands, Knope changeset support,
+  ``tags --previous``, the Towncrier templates, and the full ``notes`` rendering: reStructuredText to GitHub Markdown,
+  anchors, category headings, the New Contributors section, and the artifact and Full Changelog links (:pr:`34`) by
+  :user:`gaborbernat`.
+- The ``fragments`` linker credits the pull request author and every human author of its merge commit, including
+  ``Co-authored-by`` trailers, in commit order. It drops AI assistant identities, credits bots only when no human
+  remains, and credits an author without a GitHub account by the trailer name (:pr:`34`) by :user:`gaborbernat`.
+
+.. _release-3-1-0-security:
+
+Security
+~~~~~~~~
+
+- ``validate-news`` and the ``fragments`` linker also detect a bare ``by @handle`` credit, a ``:user:`` role anywhere in
+  the prose, and a bare ``#123`` reference, so ``validate-news`` rejects them as hand-written attribution. The rejection
+  also covers the body of each changeset checked by ``validate-news --format knope`` (:pr:`34`) by :user:`gaborbernat`.
+- ``validate-news`` rejects a Towncrier fragment that already credits an author or links a pull request, so only the
+  ``fragments`` linker writes them (:pr:`34`) by :user:`gaborbernat`.
+
+.. _release-3-1-0-removed:
+
+Removed
+~~~~~~~
+
+- Remove ``notes --generated-notes``. ``notes`` no longer reads GitHub's generated notes or renders a New Contributors
+  section from them; the release body contains only the tagged changelog section (:pr:`34`) by :user:`gaborbernat`.
+- Remove the ``hooks`` command. Hook updates move to Dependabot's ``pre-commit`` ecosystem, and pre-commit.ci keeps
+  running the hooks (:pr:`34`) by :user:`gaborbernat`.
+- ``notes`` no longer checks changelog credits against GitHub's generated notes or pull request authors, pull request
+  link labels against their targets, or pull requests missing from the generated notes, and drops the raw HTML and
+  GitHub link path checks that served those checks (:pr:`34`) by :user:`gaborbernat`.
+
 .. _release-3-0-0:
 
 3.0.0 (2026-10-25)
