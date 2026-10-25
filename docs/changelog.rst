@@ -3,6 +3,56 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-3-0-0:
+
+3.0.0 (2026-10-25)
+------------------
+
+.. _release-3-0-0-changes:
+
+Changes
+~~~~~~~
+
+- The Towncrier templates always append the fragment's issue references, as Towncrier's own template does, since no
+  linker adds them to the text any more (:pr:`33`) by :user:`gaborbernat`.
+
+.. _release-3-0-0-breaking-changes:
+
+Breaking changes
+~~~~~~~~~~~~~~~~
+
+- ``hooks`` rejects environment markers on direct dependencies, YAML aliases anywhere in the configuration, and
+  flow-style lists that need managed pins, instead of rewriting them (:pr:`33`) by :user:`gaborbernat`.
+- ``notes`` prints the tagged section in the changelog's own format without its heading and accepts only
+  ``--changelog``, ``--tag`` and ``--package``. It no longer renames categories, checks credits, adds artifact or
+  comparison links, or converts reStructuredText to Markdown, and drops the ``docutils``, ``markdown-it-py``,
+  ``mdformat`` and ``mdformat-gfm`` dependencies (:pr:`33`) by :user:`gaborbernat`.
+
+.. _release-3-0-0-security:
+
+Security
+~~~~~~~~
+
+- ``hooks`` rejects dependencies that uv would read as an option, URL or path, and ``UV_*``, ``PIP_*`` or ``PYTHON*``
+  keys in ``default_env`` or a hook's ``env``, since each could install packages the cooldown never checked (:pr:`33`)
+  by :user:`gaborbernat`.
+
+.. _release-3-0-0-removed:
+
+Removed
+~~~~~~~
+
+- Remove ``tags --previous``; find the comparison base with ``git describe --tags --abbrev=0 --first-parent`` (:pr:`33`)
+  by :user:`gaborbernat`.
+- Remove the ``changelog`` and ``anchors`` commands and the Knope changeset support behind them (:pr:`33`) by
+  :user:`gaborbernat`.
+- Remove the ``fragments`` and ``validate-news`` commands; check news with ``towncrier check --compare-with`` and let
+  ``gh release create --generate-notes`` credit authors. A ``+name`` fragment no longer gains a pull request link or
+  ``by`` credit in the documentation changelog, and ``towncrier`` is no longer a runtime dependency (:pr:`33`) by
+  :user:`gaborbernat`.
+- Remove the ``locks`` command and the ``tomli-w`` dependency; generate a selectable project lock with ``nab lock``
+  (:pr:`33`) by :user:`gaborbernat`.
+
 .. _release-2-0-0:
 
 2.0.0 (2026-10-25)
