@@ -3,6 +3,88 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-2-0-0:
+
+2.0.0 (2026-10-25)
+------------------
+
+.. _release-2-0-0-changes:
+
+Changes
+~~~~~~~
+
+- Make ``tags --next auto`` select a major release for a ``removal`` fragment, as it does for ``breaking``, because a
+  removed interface breaks its callers (:pr:`32`) by :user:`gaborbernat`.
+
+.. _release-2-0-0-fixed:
+
+Fixed
+~~~~~
+
+- Keep a literal ``~`` from a reStructuredText changelog escaped in GitHub release notes, so GitHub does not render
+  ``~text~`` as strikethrough (:pr:`32`) by :user:`gaborbernat`.
+- Lock a workspace member's dependencies, and the dependencies of the project's own extras, in place of a published copy
+  from PyPI when a runtime dependency or extra names that member or the project itself (:pr:`32`) by
+  :user:`gaborbernat`.
+- Preserve inline code spacing and HTML entity text in GitHub release notes. Keep pull request links and verified
+  credits with their change item across HTML breaks. Reject fragment structures that move attribution outside
+  Towncrier's list item and malformed HTML literal elements that are self-closing, unclosed, or crossed (:pr:`32`) by
+  :user:`gaborbernat`.
+- Resolve each ``release-*`` group under the pins of ``project-runtime`` and of the ``release-*`` groups before it, so a
+  lock whose release selections cannot be installed together fails when it is refreshed rather than in the release job
+  (:pr:`32`) by :user:`gaborbernat`.
+- Resolve hook dependencies for a free-threaded ``language_version`` such as ``python3.14t`` instead of failing
+  (:pr:`32`) by :user:`gaborbernat`.
+- Treat a reStructuredText ``X.Y.Z (date)`` line as a release heading only when an adornment underlines it, so a version
+  mentioned in an entry no longer ends the section (:pr:`32`) by :user:`gaborbernat`.
+
+.. _release-2-0-0-documentation:
+
+Documentation
+~~~~~~~~~~~~~
+
+- Restore the verified contributor credit for pull request #4 in the 0.1.1 changelog entry (:pr:`32`) by
+  :user:`gaborbernat`.
+
+.. _release-2-0-0-breaking-changes:
+
+Breaking changes
+~~~~~~~~~~~~~~~~
+
+- Record the resolving uv version as ``uv-version`` in ``pylock.toml`` and make ``locks --check`` report a different uv
+  before comparing the lock. Stop writing the ``[tool.nab]`` creation stamp. Existing locks must be refreshed (:pr:`32`)
+  by :user:`gaborbernat`.
+- Remove the ``locks`` options ``--project``, ``--output``, ``--tool-python``, ``--build-requirement`` and
+  ``--exclude-newer-package``, which no caller used. The command reads ``pyproject.toml`` and writes ``pylock.toml`` in
+  the current directory. Declare dynamic build requirements in a ``build`` dependency group and package cutoffs in
+  ``[tool.release-creator.locks.exclude-newer-package]`` (:pr:`32`) by :user:`gaborbernat`.
+- Remove the ``tags --next calver`` choice, which no caller used (:pr:`32`) by :user:`gaborbernat`.
+
+.. _release-2-0-0-security:
+
+Security
+~~~~~~~~
+
+- Check credits and links inside inline HTML elements such as ``<code>`` in GitHub release notes, since GitHub renders
+  them. Reject release entries and fragments with ``<details>``, ``<summary>``, or an HTML comment left open across
+  blocks, which could hide the real author behind a false credit (:pr:`32`) by :user:`gaborbernat`.
+- Check the visible text of every link in GitHub release notes. A link label that shows a pull request number, such as
+  ``#5``, ``(#5)``, ``GH-5`` or a pull request URL, must point to that pull request in the release repository; credits
+  inside link labels and GitHub links with ``.``, ``..`` or percent-encoded path segments are rejected (:pr:`32`) by
+  :user:`gaborbernat`.
+- Reject ``additional_dependencies`` on a hook whose language, set in the configuration or in the hook repository's
+  manifest, is not Python, because those dependencies would install unpinned and uncooled (:pr:`32`) by
+  :user:`gaborbernat`.
+- Reject a YAML merge key at the root of the pre-commit configuration, which hid every remote hook from the dependency
+  closure check (:pr:`32`) by :user:`gaborbernat`.
+- Reject managed hook dependency pins that select extras, because uv ignores extras in constraints and the extra's
+  dependencies would install unpinned (:pr:`32`) by :user:`gaborbernat`.
+- Reject pre-commit configurations where two hook repositories share a hook list or hook through a YAML alias, which
+  resolved only one repository's dependency closure, and dependency lists that reuse an anchored entry, which received
+  managed pins at the anchor (:pr:`32`) by :user:`gaborbernat`.
+- Resolve locks with ``--no-python-downloads``, so ``locks`` builds source distributions only with an installed Python
+  instead of fetching a managed interpreter (:pr:`32`) by :user:`gaborbernat`.
+
 .. _release-1-1-0:
 
 1.1.0 (2026-10-24)
