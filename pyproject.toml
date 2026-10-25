@@ -25,16 +25,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dynamic = [ "readme", "version" ]
-dependencies = [
-  "docutils>=0.22",
-  "markdown-it-py>=4,<5",
-  "mdformat>=1,<2",
-  "mdformat-gfm>=1,<2",
-  "packaging>=26",
-  "pyyaml>=6",
-  "tomli-w>=1.2",
-  "towncrier>=26.9"
-]
+dependencies = [ "packaging>=26", "pyyaml>=6" ]
 urls.Changelog = "https://release-creator.readthedocs.io/en/latest/changelog.html"
 urls.Documentation = "https://release-creator.readthedocs.io/"
 urls.Homepage = "https://release-creator.readthedocs.io/"
@@ -47,12 +38,11 @@ dev = [ { include-group = "test" }, { include-group = "type" }, { include-group 
 test = [
   "covdefaults>=2.3",
   "diff-cover>=10.2",
-  "graphql-core>=3",
   "pytest>=9",
   "pytest-cov>=7",
   "pytest-mock>=3.16",
   "pytest-xdist>=3",
-  { include-group = "release-prepare" },
+  "towncrier>=26.9",
 ]
 type = [ "ty>=0.0.84", { include-group = "test" }, { include-group = "docs" } ]
 docs = [
@@ -65,9 +55,6 @@ docs = [
 fix = [ "prek>=0.2" ]
 pkg-meta = [ "check-wheel-contents>=0.6.3", "twine>=7", "uv>=0.12.22" ]
 release-check = [ "prek>=0.2" ]
-release-notes = []
-release-prepare = [ "prek>=0.2", "towncrier>=26.9" ]
-release-validate = [ "prek>=0.2" ]
 
 [tool.hatch]
 version.source = "vcs"
