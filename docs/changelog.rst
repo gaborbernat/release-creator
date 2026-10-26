@@ -3,6 +3,18 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-4-1-0:
+
+4.1.0 (2026-10-26)
+------------------
+
+.. _release-4-1-0-added:
+
+Added
+~~~~~
+
+- Every command now explains on stderr what it decided and why (:pr:`41`) by :user:`gaborbernat`.
+
 .. _release-4-0-0:
 
 4.0.0 (2026-10-26)
