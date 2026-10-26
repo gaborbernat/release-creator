@@ -3,6 +3,19 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-4-2-0:
+
+4.2.0 (2026-10-26)
+------------------
+
+.. _release-4-2-0-changes:
+
+Changes
+~~~~~~~
+
+- Knope changeset frontmatter is now read with knope's own line rule instead of a YAML parser, and release-creator no
+  longer depends on PyYAML (:pr:`43`) by :user:`gaborbernat`.
+
 .. _release-4-1-0:
 
 4.1.0 (2026-10-26)
