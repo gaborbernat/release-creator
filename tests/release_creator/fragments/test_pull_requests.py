@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Model the GitHub CLI boundary.
 from typing import cast
 from unittest.mock import MagicMock, create_autospec
@@ -12,7 +13,7 @@ from graphql import parse
 
 from release_creator import process
 from release_creator.fragments import pull_requests
-from release_creator.fragments.pull_requests import PullRequest, PullRequestAuthor, PullRequestCredit
+from release_creator.fragments.pull_requests import PullRequest, PullRequestCredit
 
 
 def _graph_response(nodes: list[dict[str, object]]) -> dict[str, object]:
@@ -168,14 +169,14 @@ def test_fragment_pull_requests_credits_deleted_author(
     assert pull_requests.fragment_pull_requests("tox-dev/example", {"+news.feature.md": "a" * 40}) == {
         "+news.feature.md": PullRequest(
             number="42",
-            author=PullRequestAuthor(handle="ghost", is_bot=False),
             credits=(PullRequestCredit(name="ghost", linked=True),),
         )
     }
 
 
 def test_fragment_pull_requests_chunks_large_history(monkeypatch: pytest.MonkeyPatch) -> None:
-    commits = {f"+news-{index}.feature.md": f"{index:040x}" for index in range(101)}
+    commits = {f"+news-{index}.feature.md": f"{index:040x}" for index in range(81)}
+    batches = (range(40), range(40, 80), range(80, 81))
     responses = [
         subprocess.CompletedProcess(
             [],
@@ -189,16 +190,16 @@ def test_fragment_pull_requests_chunks_large_history(monkeypatch: pytest.MonkeyP
             }),
             "",
         )
-        for batch in (range(100), range(100, 101))
+        for batch in batches
     ]
     run: MagicMock = cast("MagicMock", create_autospec(process.subprocess.run, side_effect=responses))
     monkeypatch.setattr(process.shutil, "which", create_autospec(process.shutil.which, return_value="gh"))
     monkeypatch.setattr(process.subprocess, "run", run)
 
     assert len(pull_requests.fragment_pull_requests("tox-dev/example", commits)) == len(commits)
-    assert run.call_count == len(responses)
-    assert "c99: object" in run.call_args_list[0].kwargs["input"]
-    assert "c100: object" in run.call_args_list[1].kwargs["input"]
+    assert [re.findall(r"\bc(\d+): object", call.kwargs["input"]) for call in run.call_args_list] == [
+        [str(index) for index in batch] for batch in batches
+    ]
 
 
 def test_fragment_pull_requests_accepts_empty_commit_map(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -278,6 +279,33 @@ def test_fragment_pull_requests_drops_ai_assistant_authors(monkeypatch: pytest.M
 
 
 @pytest.mark.parametrize(
+    "login",
+    [
+        pytest.param("claude", id="claude"),
+        pytest.param("codex", id="codex"),
+        pytest.param("CommandCodeBot", id="commandcode"),
+        pytest.param("COPILOT", id="copilot-case-insensitive"),
+    ],
+)
+def test_fragment_pull_requests_drops_ai_assistant_commit_logins(monkeypatch: pytest.MonkeyPatch, login: str) -> None:
+    assert _credits(monkeypatch, [_commit_author(name="Agent", email="agent@example.com", login=login)]) == (
+        PullRequestCredit(name="alice", linked=True),
+    )
+
+
+def test_fragment_pull_requests_drops_ai_assistant_pull_request_author(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _credits(monkeypatch, [_commit_author(login="bob")], login="Claude") == (
+        PullRequestCredit(name="bob", linked=True),
+    )
+
+
+def test_fragment_pull_requests_credits_nobody_when_only_ai_assistants_remain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert _credits(monkeypatch, [_commit_author(login="claude")], login="claude") == ()
+
+
+@pytest.mark.parametrize(
     "email",
     [
         pytest.param("claude@example.com", id="ai-name-human-email"),
@@ -286,9 +314,9 @@ def test_fragment_pull_requests_drops_ai_assistant_authors(monkeypatch: pytest.M
     ],
 )
 def test_fragment_pull_requests_keeps_authors_outside_ai_list(monkeypatch: pytest.MonkeyPatch, email: str) -> None:
-    assert _credits(monkeypatch, [_commit_author(name="Claude", email=email, login="claude")]) == (
+    assert _credits(monkeypatch, [_commit_author(name="Claude", email=email, login="carol")]) == (
         PullRequestCredit(name="alice", linked=True),
-        PullRequestCredit(name="claude", linked=True),
+        PullRequestCredit(name="carol", linked=True),
     )
 
 
@@ -296,6 +324,23 @@ def test_fragment_pull_requests_credits_unlinked_author_by_name(monkeypatch: pyt
     assert _credits(monkeypatch, [_commit_author(name="Bob Builder", login=None)]) == (
         PullRequestCredit(name="alice", linked=True),
         PullRequestCredit(name="Bob Builder", linked=False),
+    )
+
+
+@pytest.mark.parametrize(
+    "author",
+    [
+        pytest.param({"name": " ", "email": "bob@example.com", "user": None}, id="blank-name"),
+        pytest.param({"name": "", "email": "bob@example.com", "user": None}, id="empty-name"),
+        pytest.param({"email": None, "user": None}, id="missing-name"),
+    ],
+)
+def test_fragment_pull_requests_skips_unnamed_unlinked_author(
+    monkeypatch: pytest.MonkeyPatch, author: dict[str, object]
+) -> None:
+    assert _credits(monkeypatch, [author, _commit_author(login="bob")]) == (
+        PullRequestCredit(name="alice", linked=True),
+        PullRequestCredit(name="bob", linked=True),
     )
 
 
@@ -393,18 +438,6 @@ def test_fragment_pull_requests_credits_mannequin_co_author_as_ghost(monkeypatch
             TypeError,
             "invalid merge commit author ",
             id="user-type",
-        ),
-        pytest.param(
-            {"oid": "a" * 40, "authors": {"nodes": [{"name": " ", "email": "bob@example.com", "user": None}]}},
-            ValueError,
-            "unnamed merge commit author",
-            id="blank-name",
-        ),
-        pytest.param(
-            {"oid": "a" * 40, "authors": {"nodes": [{"email": None, "user": None}]}},
-            ValueError,
-            "unnamed merge commit author",
-            id="missing-name",
         ),
         pytest.param(
             {"oid": "a" * 40, "authors": {"nodes": [_commit_author(account_type="Organization")]}},

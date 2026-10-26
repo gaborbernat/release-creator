@@ -62,7 +62,7 @@ def _pulls(gh: str, repository: str, shas: list[str]) -> dict[str, PullRequest]:
         )
         for index, sha in enumerate(shas)
     ]
-    batch_size: Final = 100
+    batch_size: Final = 40
     for offset in range(0, len(aliases), batch_size):
         batch = aliases[offset : offset + batch_size]
         query = (
@@ -119,9 +119,7 @@ def _pull_request(response: dict[str, object], source: str) -> PullRequest:
         msg = f"invalid pull request number for {source}: {number}"
         raise ValueError(msg)
     account = github_account(author, number)
-    return PullRequest(
-        number=str(number), author=account, credits=_credits(account, response.get("mergeCommit"), number)
-    )
+    return PullRequest(number=str(number), credits=_credits(account, response.get("mergeCommit"), number))
 
 
 def github_account(account: dict[str, object] | None, number: int) -> PullRequestAuthor:
@@ -149,9 +147,9 @@ def _credits(author: PullRequestAuthor, commit: object, number: int) -> tuple[Pu
     if not isinstance(authors, dict) or not isinstance(nodes := authors.get("nodes"), list):
         msg = f"invalid merge commit authors for pull request #{number}"
         raise TypeError(msg)
-    entries: dict[tuple[bool, str], tuple[PullRequestCredit, bool]] = {
-        (True, author.handle.casefold()): (PullRequestCredit(name=author.handle, linked=True), author.is_bot)
-    }
+    entries: dict[tuple[bool, str], tuple[PullRequestCredit, bool]] = {}
+    if author.handle.casefold() not in AI_ASSISTANT_LOGINS:
+        entries[True, author.handle.casefold()] = (PullRequestCredit(name=author.handle, linked=True), author.is_bot)
     for node in nodes:
         if not isinstance(node, dict) or not isinstance(user := node.get("user"), dict | None):
             msg = f"invalid merge commit author for pull request #{number}"
@@ -159,12 +157,11 @@ def _credits(author: PullRequestAuthor, commit: object, number: int) -> tuple[Pu
         if isinstance(email := node.get("email"), str) and _RE_AI_ASSISTANT_EMAIL.search(email):
             continue
         if user is None:
-            if not isinstance(name := node.get("name"), str) or not name.strip():
-                msg = f"unnamed merge commit author for pull request #{number}"
-                raise ValueError(msg)
-            entries.setdefault((False, name.casefold()), (PullRequestCredit(name=name, linked=False), False))
+            if isinstance(name := node.get("name"), str) and name.strip():
+                entries.setdefault((False, name.casefold()), (PullRequestCredit(name=name, linked=False), False))
             continue
-        account = github_account(user, number)
+        if (account := github_account(user, number)).handle.casefold() in AI_ASSISTANT_LOGINS:
+            continue
         entries.setdefault(
             (True, account.handle.casefold()), (PullRequestCredit(name=account.handle, linked=True), account.is_bot)
         )
@@ -193,7 +190,6 @@ class PullRequest:
     """Merged pull request associated with a fragment."""
 
     number: str
-    author: PullRequestAuthor
     credits: tuple[PullRequestCredit, ...]
 
 

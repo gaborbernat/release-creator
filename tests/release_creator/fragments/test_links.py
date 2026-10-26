@@ -33,9 +33,7 @@ def _link(
         if authors is not None and number not in authors:
             continue
         author = authors[number] if authors is not None else PullRequestAuthor(handle="alice", is_bot=False)
-        pull_requests[name] = PullRequest(
-            number=number, author=author, credits=(PullRequestCredit(name=author.handle, linked=True),)
-        )
+        pull_requests[name] = PullRequest(number=number, credits=(PullRequestCredit(name=author.handle, linked=True),))
     add_pull_request_links(directory, repository, pull_requests, mode=mode)
 
 
@@ -343,7 +341,9 @@ def test_add_pull_request_links_accepts_formatted_author_credit(tmp_path: Path) 
     )
 
 
-@pytest.mark.parametrize("label", [pytest.param("`@alice`", id="code"), pytest.param("", id="empty")])
+@pytest.mark.parametrize(
+    "label", [pytest.param("![@alice](https://example.com/a.png)", id="image"), pytest.param("", id="empty")]
+)
 def test_add_pull_request_links_ignores_nontext_profile_label(tmp_path: Path, label: str) -> None:
     fragment = tmp_path / "+first.feature.md"
     fragment.write_text(f"Add a feature by [{label}](https://github.com/alice).\n")
@@ -1380,6 +1380,103 @@ def test_add_pull_request_links_keeps_other_hand_written_credit(
             "Document ``by @bob``, ``:user:`bob``` and ``#42`` (:pr:`42`) by :user:`alice`.\n",
             id="rst-literal",
         ),
+        pytest.param(
+            "+first.feature.md",
+            "Add a feature (by @bob).\n",
+            "Add a feature (by @bob) ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="markdown-parenthesized-by",
+        ),
+        pytest.param(
+            "+first.feature.rst",
+            "Add a feature (by @bob).\n",
+            "Add a feature (by @bob) (:pr:`42`).\n",
+            id="rst-parenthesized-by",
+        ),
+        pytest.param(
+            "+first.feature.md",
+            "Add a feature. By @bob.\n",
+            "Add a feature. By @bob ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="markdown-capitalized-by",
+        ),
+        pytest.param(
+            "+first.feature.rst",
+            "Add a feature. By @bob.\n",
+            "Add a feature. (:pr:`42`) by @bob.\n",
+            id="rst-capitalized-by",
+        ),
+        pytest.param(
+            "+first.feature.rst",
+            "Thanks :user:`Bob <bob>` for the feature.\n",
+            "Thanks :user:`Bob <bob>` for the feature (:pr:`42`).\n",
+            id="rst-user-role-titled",
+        ),
+        pytest.param(
+            "+first.feature.md",
+            "Thanks :user:`renovate[bot]` for the feature.\n",
+            "Thanks :user:`renovate[bot]` for the feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="markdown-user-role-bot",
+        ),
+        pytest.param(
+            "+first.feature.rst",
+            "Thanks :user:`renovate[bot]` for the feature.\n",
+            "Thanks :user:`renovate[bot]` for the feature (:pr:`42`).\n",
+            id="rst-user-role-bot",
+        ),
+        pytest.param(
+            "+first.feature.md",
+            "Thanks :User:`bob` for the feature.\n",
+            "Thanks :User:`bob` for the feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="markdown-user-role-case",
+        ),
+        pytest.param(
+            "+first.feature.rst",
+            "Thanks :User:`bob` for the feature.\n",
+            "Thanks :User:`bob` for the feature (:pr:`42`).\n",
+            id="rst-user-role-case",
+        ),
+        pytest.param(
+            "+first.feature.md",
+            "Add a feature by [`@bob`](https://github.com/bob).\n",
+            "Add a feature by [`@bob`](https://github.com/bob) ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="markdown-code-profile-label",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature :PR:`42`.\n",
+            "Add a feature :PR:`42` by [@alice](https://github.com/alice).\n",
+            id="markdown-pr-role-case",
+        ),
+        pytest.param(
+            "42.feature.rst",
+            "Add a feature :PR:`42`.\n",
+            "Add a feature :PR:`42` by :user:`alice`.\n",
+            id="rst-pr-role-case",
+        ),
+        pytest.param(
+            "42.feature.md",
+            'Add a feature (<a href="https://github.com/tox-dev/example/pull/42">PR</a>).\n',
+            'Add a feature (<a href="https://github.com/tox-dev/example/pull/42">PR</a>) by [@alice](https://github.com/alice).\n',
+            id="markdown-html-anchor",
+        ),
+        pytest.param(
+            "42.feature.md",
+            "Add a feature.\n\n<p>see #42</p>\n",
+            "Add a feature by [@alice](https://github.com/alice).\n\n<p>see #42</p>\n",
+            id="markdown-html-block",
+        ),
+        pytest.param(
+            "+first.feature.md",
+            "Add a feature.\n\n<p><code>#42</code></p>\n\n<!-- see #42 -->\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice).\n\n<p><code>#42</code></p>\n\n"
+            "<!-- see #42 -->\n",
+            id="markdown-html-block-code-and-comment",
+        ),
+        pytest.param(
+            "+first.feature.rst",
+            "Document ``(by @bob)`` and ``:PR:`42```.\n",
+            "Document ``(by @bob)`` and ``:PR:`42``` (:pr:`42`) by :user:`alice`.\n",
+            id="rst-literal-new-forms",
+        ),
     ],
 )
 def test_add_pull_request_links_detects_wider_attribution(
@@ -1398,6 +1495,15 @@ def test_add_pull_request_links_detects_wider_attribution(
     [
         pytest.param("+first.feature.md", "Fix #42.\n", "already linked", id="markdown-bare-reference"),
         pytest.param("+first.feature.rst", "Fix #42.\n", "already linked", id="rst-bare-reference"),
+        pytest.param("+first.feature.md", "Fix :PR:`42`.\n", "already linked", id="markdown-pr-role-case"),
+        pytest.param("+first.feature.rst", "Fix :PR:`42`.\n", "already linked", id="rst-pr-role-case"),
+        pytest.param(
+            "+first.feature.md",
+            'Fix (<a href="https://github.com/tox-dev/example/pull/42">PR</a>).\n',
+            "already linked",
+            id="markdown-html-anchor",
+        ),
+        pytest.param("+first.feature.md", "Fix it.\n\n<p>see #42</p>\n", "already linked", id="markdown-html-block"),
     ],
 )
 def test_add_pull_request_links_rejects_named_fragment_with_bare_reference(
@@ -1430,6 +1536,41 @@ def test_add_pull_request_links_rejects_named_fragment_with_bare_reference(
             "Remove a root from #41 ([#42](https://github.com/tox-dev/example/pull/42)) "
             "by [@alice](https://github.com/alice)",
             id="other-bare-reference",
+        ),
+        pytest.param(
+            "Remove a root (by @bob)",
+            "Remove a root (by @bob) ([#42](https://github.com/tox-dev/example/pull/42))",
+            id="parenthesized-by",
+        ),
+        pytest.param(
+            "Remove a root. By @bob",
+            "Remove a root. By @bob ([#42](https://github.com/tox-dev/example/pull/42))",
+            id="capitalized-by",
+        ),
+        pytest.param(
+            "Remove a root for :user:`renovate[bot]`",
+            "Remove a root for :user:`renovate[bot]` ([#42](https://github.com/tox-dev/example/pull/42))",
+            id="user-role-bot",
+        ),
+        pytest.param(
+            "Remove a root for :User:`bob`",
+            "Remove a root for :User:`bob` ([#42](https://github.com/tox-dev/example/pull/42))",
+            id="user-role-case",
+        ),
+        pytest.param(
+            "Remove a root by [`@bob`](https://github.com/bob)",
+            "Remove a root by [`@bob`](https://github.com/bob) ([#42](https://github.com/tox-dev/example/pull/42))",
+            id="code-profile-label",
+        ),
+        pytest.param(
+            "Remove a root :PR:`42`",
+            "Remove a root :PR:`42` by [@alice](https://github.com/alice)",
+            id="pr-role-case",
+        ),
+        pytest.param(
+            'Remove a root (<a href="https://github.com/tox-dev/example/pull/42">PR</a>)',
+            'Remove a root (<a href="https://github.com/tox-dev/example/pull/42">PR</a>) by [@alice](https://github.com/alice)',
+            id="html-anchor",
         ),
     ],
 )
@@ -1529,10 +1670,36 @@ def test_add_pull_request_links_formats_credits(
 ) -> None:
     fragment = tmp_path / filename
     fragment.write_text(content)
-    author = PullRequestAuthor(handle="alice", is_bot=False)
+
+    add_pull_request_links(tmp_path, "tox-dev/example", {filename: PullRequest(number="42", credits=credited)})
+
+    assert fragment.read_text() == expected
+
+
+@pytest.mark.parametrize(
+    ("filename", "content", "expected"),
+    [
+        pytest.param(
+            "+first.feature.md",
+            "Add a feature.\n",
+            "Add a feature ([#42](https://github.com/tox-dev/example/pull/42)).\n",
+            id="markdown",
+        ),
+        pytest.param("+first.feature.rst", "Add a feature.\n", "Add a feature (:pr:`42`).\n", id="rst"),
+        pytest.param("42.feature.md", "Fix #42.\n", "Fix #42.\n", id="markdown-linked"),
+        pytest.param("42.feature.rst", "Fix #42.\n", "Fix #42.\n", id="rst-linked"),
+    ],
+)
+def test_add_pull_request_links_without_credits_adds_only_link(
+    tmp_path: Path, filename: str, content: str, expected: str
+) -> None:
+    fragment = tmp_path / filename
+    fragment.write_text(content)
 
     add_pull_request_links(
-        tmp_path, "tox-dev/example", {filename: PullRequest(number="42", author=author, credits=credited)}
+        tmp_path,
+        "tox-dev/example",
+        {filename: PullRequest(number="42", credits=())},
     )
 
     assert fragment.read_text() == expected
@@ -1541,12 +1708,11 @@ def test_add_pull_request_links_formats_credits(
 def test_add_pull_request_links_knope_formats_credits(tmp_path: Path) -> None:
     fragment = tmp_path / "trust-roots.md"
     fragment.write_text("---\ndefault: security\n---\n\n# Remove a root\n")
-    author = PullRequestAuthor(handle="alice", is_bot=False)
 
     add_pull_request_links(
         tmp_path,
         "tox-dev/example",
-        {fragment.name: PullRequest(number="42", author=author, credits=(_ALICE, _BOB, _CAROL))},
+        {fragment.name: PullRequest(number="42", credits=(_ALICE, _BOB, _CAROL))},
         mode="knope",
     )
 
@@ -1562,12 +1728,9 @@ _MARKUP_NAME: Final = "Ann *B* _C_ `D` [E](F) <G> |H| \\I &amp; :user:`j` #42 O'
 def _linked_unlinked_name(tmp_path: Path, extension: str) -> str:
     fragment = tmp_path / f"+first.feature.{extension}"
     fragment.write_text("Add a feature.\n")
-    author = PullRequestAuthor(handle="alice", is_bot=False)
     credit = PullRequestCredit(name=_MARKUP_NAME, linked=False)
 
-    add_pull_request_links(
-        tmp_path, "tox-dev/example", {fragment.name: PullRequest(number="42", author=author, credits=(credit,))}
-    )
+    add_pull_request_links(tmp_path, "tox-dev/example", {fragment.name: PullRequest(number="42", credits=(credit,))})
 
     return fragment.read_text()
 
@@ -1613,8 +1776,7 @@ def test_add_pull_request_links_rerun_keeps_unlinked_credit(
 ) -> None:
     fragment = tmp_path / filename
     fragment.write_text("Fix a bug.\n")
-    author = PullRequestAuthor(handle="dependabot", is_bot=True)
-    pull = PullRequest(number="42", author=author, credits=(PullRequestCredit(name=name, linked=False),))
+    pull = PullRequest(number="42", credits=(PullRequestCredit(name=name, linked=False),))
 
     for _ in range(2):
         add_pull_request_links(tmp_path, "tox-dev/example", {filename: pull})
@@ -1625,8 +1787,7 @@ def test_add_pull_request_links_rerun_keeps_unlinked_credit(
 def test_add_pull_request_links_knope_rerun_keeps_unlinked_credit(tmp_path: Path) -> None:
     fragment = tmp_path / "trust-roots.md"
     fragment.write_text("---\ndefault: security\n---\n\n# Remove a root\n")
-    author = PullRequestAuthor(handle="dependabot", is_bot=True)
-    pull = PullRequest(number="42", author=author, credits=(PullRequestCredit(name="Carol", linked=False),))
+    pull = PullRequest(number="42", credits=(PullRequestCredit(name="Carol", linked=False),))
 
     for _ in range(2):
         add_pull_request_links(tmp_path, "tox-dev/example", {fragment.name: pull}, mode="knope")
