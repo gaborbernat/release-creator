@@ -3,6 +3,41 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-3-2-1:
+
+3.2.1 (2026-10-26)
+------------------
+
+.. _release-3-2-1-fixed:
+
+Fixed
+~~~~~
+
+- The ``fragments`` linker asks GitHub about at most 40 fragment commits per GraphQL query. A batch of 50 or more
+  exceeded GitHub's node limit and failed with ``MAX_NODE_LIMIT_EXCEEDED``, so release preparation with many fragments
+  aborted (:pr:`36`) by :user:`gaborbernat`.
+- The ``fragments`` linker skips a merge commit author that has no linked GitHub account and no name, instead of
+  aborting the run with ``unnamed merge commit author`` (:pr:`36`) by :user:`gaborbernat`.
+- ``contributors`` finds the version section the same way ``notes`` does, so it also accepts a leading ``v``, a
+  reStructuredText title that links the version to its tree, and a Keep a Changelog ``## [1.2.3] - 2026-10-25`` heading.
+  Before, it reported ``found 0`` for these changelogs (:pr:`36`) by :user:`gaborbernat`.
+
+.. _release-3-2-1-security:
+
+Security
+~~~~~~~~
+
+- The ``fragments`` linker also drops merge commit authors and pull request authors whose GitHub login is a known AI
+  assistant (``claude``, ``codex``, ``CommandCodeBot``, ``Copilot``, in any letter case), as ``contributors`` already
+  does. Before, only AI assistant commit emails were dropped. When no author remains, the linker adds the pull request
+  link without a credit (:pr:`36`) by :user:`gaborbernat`.
+- ``validate-news`` and the ``fragments`` linker also detect a ``by`` credit in any letter case after any non-word
+  character, such as ``(by @alice)`` or ``By @alice``; a ``:user:`` role with any content, such as a display name or a
+  ``[bot]`` login; ``:user:``, ``:pr:`` and ``:pull:`` role names in any letter case; a Markdown profile link whose text
+  is a code span; and an HTML anchor or HTML block that links a pull request or contains ``#123``. ``validate-news``
+  rejects them as hand-written attribution, and the linker treats them as already credited or linked (:pr:`36`) by
+  :user:`gaborbernat`.
+
 .. _release-3-2-0:
 
 3.2.0 (2026-10-25)
