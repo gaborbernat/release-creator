@@ -58,8 +58,8 @@ def test_markdown_template_links_two_fragments_from_one_pull_request(tmp_path: P
     changelog = _build_markdown_fragments(
         tmp_path,
         {
-            "+first.feature.md": "Add an option by [@alice](https://github.com/alice).\n",
-            "+second.bugfix.md": "Fix a fallback by [@alice](https://github.com/alice).\n",
+            "+first.feature.md": "Add an option.\n",
+            "+second.bugfix.md": "Fix a fallback.\n",
         },
         {name: _alice_pull("42") for name in ("+first.feature.md", "+second.bugfix.md")},
         categories=("feature", "bugfix"),
@@ -70,10 +70,10 @@ def test_markdown_template_links_two_fragments_from_one_pull_request(tmp_path: P
         ReleaseContext(tag="1.2.3", repository="tox-dev/example"),
     )
     assert (
-        "Add an option by [@alice](https://github.com/alice) ([#42](https://github.com/tox-dev/example/pull/42))."
+        "Add an option ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice)."
     ) in notes
     assert (
-        "Fix a fallback by [@alice](https://github.com/alice) ([#42](https://github.com/tox-dev/example/pull/42))."
+        "Fix a fallback ([#42](https://github.com/tox-dev/example/pull/42)) by [@alice](https://github.com/alice)."
     ) in notes
 
 
@@ -193,7 +193,7 @@ def _build_markdown_fragments(
         'template = "release_creator.fragments:template.jinja2"\ntitle_format = false\n'
         f"{issue_line}type = [\n{types}\n]\n"
     )
-    add_pull_request_links(directory, "tox-dev/example", pull_requests)
+    add_pull_request_links(directory, "tox-dev/example", pull_requests, commits={})
     subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed command and temporary checkout.
         [str(Path(sys.executable).with_name("towncrier")), "build", "--yes", "--version", "1.2.3"],
         cwd=tmp_path,
@@ -236,6 +236,7 @@ def test_template_does_not_confuse_short_issue_with_longer_pull_request(
         tmp_path / "changelog.d",
         "tox-dev/example",
         {fragment.name: _alice_pull("123")},
+        commits={},
     )
 
     subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed command and temporary checkout.
@@ -277,6 +278,7 @@ def _build_rst_fragment(tmp_path: Path, source: str, underlines: str = "", filen
         tmp_path / "changelog.d",
         "tox-dev/example",
         {filename: _alice_pull("2")},
+        commits={},
     )
 
     subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed command and temporary checkout.

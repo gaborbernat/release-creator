@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Exercise Git and replace the GitHub CLI boundary.
 import sys
 lazy from pathlib import Path
@@ -92,7 +91,6 @@ def _mock_github_pull(mocker: MockerFixture, commit: str) -> MagicMock:
         }
     }
     original_run = process.subprocess.run
-    original_which = shutil.which
 
     def execute(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         if command[0] == "gh":
@@ -109,26 +107,25 @@ def _mock_github_pull(mocker: MockerFixture, commit: str) -> MagicMock:
             timeout=300,
         )
 
-    mocker.patch(
-        "release_creator.process.shutil.which",
-        autospec=True,
-        side_effect=lambda name: "gh" if name == "gh" else original_which(name),
-    )
     return cast("MagicMock", mocker.patch("release_creator.process.subprocess.run", autospec=True, side_effect=execute))
 
 
-def test_fragments_cli_rejects_unsupported_name(
-    git_repository: tuple[Path, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_fragments_cli_leaves_fragments_in_shallow_clone(
+    git_repository: tuple[Path, str], tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    directory = git_repository[0] / "changelog.d"
-    directory.mkdir()
-    (directory / "topic.feature.md").write_text("Add a feature.\n")
+    repository, git = git_repository
+    (repository / "changelog.d").mkdir()
+    (repository / "changelog.d" / "+topic.feature.md").write_text("Add a feature.\n")
+    assert run_text([git, "add", "changelog.d"]).returncode == 0
+    assert run_text([git, "commit", "-qm", "Add a feature (#3)"]).returncode == 0
+    checkout = tmp_path_factory.mktemp("shallow")
+    assert run_text([git, "clone", "-q", "--depth", "1", f"file://{repository}", str(checkout)]).returncode == 0
+    monkeypatch.chdir(checkout)
     monkeypatch.setattr(sys, "argv", ["release-creator", "fragments", "--repository", "tox-dev/example"])
 
-    with pytest.raises(SystemExit, match="2"):
-        main()
+    main()
 
-    assert "unsupported changelog fragment name" in capsys.readouterr().err
+    assert (checkout / "changelog.d" / "+topic.feature.md").read_text() == "Add a feature.\n"
 
 
 def test_fragments_cli_reports_missing_history(

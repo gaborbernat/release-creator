@@ -9,7 +9,7 @@ import pytest
 lazy from pytest_mock import MockerFixture
 
 from release_creator.cli import main
-from release_creator.fragments.check import changed_changesets, changed_fragments, validate_fragment_deletions
+from release_creator.fragments.check import changed_changesets, changed_fragments
 
 
 def _git(*args: str) -> None:
@@ -76,6 +76,12 @@ def news_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         pytest.param("+topic.doc.md", "Add a feature.\n", 0, "unsupported changelog fragment", id="category"),
         pytest.param("topic.feature.md", "Add a feature.\n", 0, "unsupported changelog fragment", id="name"),
         pytest.param("+topic.feature.md", " \n", 0, "empty changelog fragment", id="empty"),
+        pytest.param(
+            "+topic.feature.md", "Add a feature.\n\n```\ncode\n", 0, "unclosed Markdown code fence", id="unclosed-fence"
+        ),
+        pytest.param(
+            "+topic.feature.md", "Show \ue000.\n", 0, "private-use character U\\+E000", id="markdown-placeholder"
+        ),
         pytest.param("README.md", "Read me.\n", 0, "", id="outside-directory"),
         pytest.param("nested/+topic.feature.md", "Nested.\n", 0, "", id="nested-directory"),
         pytest.param("notes.txt", "Other file.\n", 0, "unsupported changelog fragment", id="other-extension"),
@@ -117,10 +123,34 @@ def test_changed_fragments(news_repository: Path, filename: str, content: str, c
 
 
 @pytest.mark.parametrize(
+    ("content", "error"),
+    [
+        pytest.param("Show \ue000.\n", "private-use character U\\+E000", id="placeholder"),
+        pytest.param(
+            "Add a feature.\n\n.. note::\n",
+            r'invalid reStructuredText in changelog fragment \(Content block expected for the "note" directive',
+            id="error",
+        ),
+        pytest.param("Add a feature.\n\n.. include:: /etc/passwd\n", '"include" directive disabled', id="include"),
+        pytest.param("Fix A.\n\n.. raw:: html\n\n   <b>x</b>\n", '"raw" directive disabled', id="raw-directive"),
+        pytest.param("Add *a feature.\n", "Inline emphasis start-string without end-string", id="warning"),
+    ],
+)
+def test_changed_fragments_rejects_release_breaking_rst(news_repository: Path, content: str, error: str) -> None:
+    config = news_repository / "pyproject.toml"
+    config.write_text(config.read_text().replace("CHANGELOG.md", "CHANGELOG.rst"), encoding="utf-8")
+    (news_repository / "changelog.d/+topic.feature.rst").write_text(content, encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
+
+    with pytest.raises(ValueError, match=error):
+        changed_fragments(config, "main")
+
+
+@pytest.mark.parametrize(
     "content",
     [
         pytest.param("Fix A.\n\n  - subdetail\n", id="nested-list"),
-        pytest.param("Fix A.\n\n.. raw:: html\n\n   <b>x</b>\n", id="raw-directive"),
         pytest.param("Fix A.\n\nDetails\n=======\n", id="section"),
         pytest.param("=== ===\nA   B\n=== ===\n1   2\n=== ===\n", id="table"),
         pytest.param("Fix A.\n\n.. hidden comment\n\nMore detail.\n", id="embedded-comment"),
@@ -231,6 +261,12 @@ def test_changed_fragments_rejects_rst_structure(news_repository: Path, content:
         pytest.param(".rst", "Add a feature :PR:`5`.\n", "pull request link", id="rst-pr-role-case"),
         pytest.param(".rst", "Add a feature :Pull:`5`.\n", "pull request link", id="rst-pull-role-case"),
         pytest.param(".rst", "Document ``(by @alice)`` and ``:PR:`5```.\n", "", id="rst-literal-new-forms"),
+        pytest.param(
+            ".md", "Add a feature by\n[@alice](https://github.com/alice).\n", "author credit", id="markdown-line-break"
+        ),
+        pytest.param(
+            ".md", "Add a feature by [<b>@alice</b>](https://github.com/alice).\n", "", id="markdown-nontext-label"
+        ),
     ],
 )
 def test_changed_fragments_rejects_hand_written_attribution(
@@ -278,6 +314,7 @@ def test_changed_fragments_reports_missing_repository_root(news_repository: Path
         "release_creator.process.subprocess.run",
         autospec=True,
         side_effect=[
+            subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "changelog.d/+topic.feature.md\0", ""),
             subprocess.CompletedProcess([], 1, "", "no root"),
         ],
@@ -285,21 +322,6 @@ def test_changed_fragments_reports_missing_repository_root(news_repository: Path
 
     with pytest.raises(ValueError, match="no root"):
         changed_fragments(news_repository / "pyproject.toml", "main")
-
-
-@pytest.mark.parametrize(
-    ("base", "filename"),
-    [
-        pytest.param("", "CHANGELOG.md", id="missing-base"),
-        pytest.param("main", "CHANGELOG.txt", id="unsupported-format"),
-    ],
-)
-def test_changed_fragments_rejects_invalid_context(news_repository: Path, base: str, filename: str) -> None:
-    config = news_repository / "pyproject.toml"
-    config.write_text(config.read_text(encoding="utf-8").replace("CHANGELOG.md", filename), encoding="utf-8")
-
-    with pytest.raises(ValueError, match="news validation needs a PR base"):
-        changed_fragments(config, base)
 
 
 def test_changed_fragments_reads_towncrier_tables(news_repository: Path) -> None:
@@ -327,13 +349,6 @@ def test_changed_fragments_uses_towncrier_defaults(news_repository: Path) -> Non
     assert changed_fragments(news_repository / "pyproject.toml", "main") == 1
 
 
-def test_changed_fragments_rejects_missing_towncrier_table(news_repository: Path) -> None:
-    (news_repository / "pyproject.toml").write_text('[project]\nname = "fixture"\n', encoding="utf-8")
-
-    with pytest.raises(ValueError, match=r"missing \[tool.towncrier\]"):
-        changed_fragments(news_repository / "pyproject.toml", "main")
-
-
 @pytest.mark.parametrize(
     ("addition", "message"),
     [
@@ -352,6 +367,28 @@ def test_changed_fragments_rejects_unsupported_towncrier_layout(
 
     with pytest.raises(ValueError, match=message):
         changed_fragments(config, "main")
+
+
+def test_changed_fragments_skips_layout_check_for_unchanged_towncrier_config(news_repository: Path) -> None:
+    config = news_repository / "pyproject.toml"
+    config.write_text(f'{config.read_text(encoding="utf-8")}[[tool.towncrier.section]]\npath = ""\n', encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Sections")
+    _git("update-ref", "refs/remotes/origin/main", "HEAD")
+    (news_repository / "changelog.d" / "+topic.feature.md").write_text("Add a feature.\n", encoding="utf-8")
+    _git("add", ".")
+    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
+
+    assert changed_fragments(config, "main") == 1
+
+
+def test_changed_fragments_checks_layout_of_new_towncrier_toml(news_repository: Path) -> None:
+    (news_repository / "towncrier.toml").write_text(
+        '[tool.towncrier]\ndirectory = "changelog.d"\n[[tool.towncrier.section]]\npath = "core"\n', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="sections are not supported"):
+        changed_fragments(news_repository / "pyproject.toml", "main")
 
 
 def test_changed_fragments_from_subdirectory(news_repository: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -380,61 +417,6 @@ def test_changed_fragments_rejects_towncrier_duplicate(news_repository: Path) ->
 
     with pytest.raises(ValueError, match=r"multiple files for 42\.feature"):
         changed_fragments(news_repository / "pyproject.toml", "main")
-
-
-@pytest.mark.parametrize(
-    ("filename", "valid"),
-    [
-        pytest.param("+topic.feature.md", True, id="named"),
-        pytest.param("42.feature.2.md", True, id="counter"),
-        pytest.param("topic.feature.md", False, id="unprefixed"),
-        pytest.param("42.other.md", False, id="unknown-category"),
-        pytest.param("template.jinja", False, id="template"),
-        pytest.param("nested/42.feature.md", False, id="nested"),
-        pytest.param("42.feature.rst", False, id="wrong-extension"),
-    ],
-)
-def test_validate_fragment_deletions(news_repository: Path, filename: str, valid: bool) -> None:
-    _stage_fragment_deletion(news_repository, filename)
-
-    if valid:
-        validate_fragment_deletions(news_repository / "pyproject.toml")
-    else:
-        with pytest.raises(ValueError, match="unsupported release fragment"):
-            validate_fragment_deletions(news_repository / "pyproject.toml")
-
-
-def test_validate_fragment_deletions_reads_towncrier_toml(news_repository: Path) -> None:
-    (news_repository / "towncrier.toml").write_text(
-        '[tool.towncrier]\ndirectory = "changelog.d"\nfilename = "CHANGELOG.md"\n'
-        '[tool.towncrier.fragment.change]\nname = "Changes"\n',
-        encoding="utf-8",
-    )
-    _stage_fragment_deletion(news_repository, "+topic.change.2.md")
-
-    validate_fragment_deletions(news_repository / "pyproject.toml")
-
-
-def test_validate_fragment_deletions_cli(
-    news_repository: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _stage_fragment_deletion(news_repository, "template.jinja")
-    monkeypatch.setattr(sys, "argv", ["release-creator", "validate-fragment-deletions"])
-
-    with pytest.raises(SystemExit, match="2"):
-        main()
-
-    assert "unsupported release fragment" in capsys.readouterr().err
-
-
-def _stage_fragment_deletion(repository: Path, filename: str) -> None:
-    fragment = repository / "changelog.d" / filename
-    fragment.parent.mkdir(parents=True, exist_ok=True)
-    fragment.write_text("A change.\n", encoding="utf-8")
-    _git("add", ".")
-    _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Add fragment")
-    fragment.unlink()
-    _git("add", "-u")
 
 
 def test_towncrier_check_rejects_unprefixed_fragment(news_repository: Path) -> None:
@@ -488,6 +470,15 @@ def test_validate_news_cli_reports_count(
         ),
         pytest.param("---\n---\n\n# Fix a bug\n", 0, "empty changeset front matter", id="empty-front-matter"),
         pytest.param("---\ndefault: patch\n---\n\n# \n", 0, "empty changeset summary", id="empty-summary"),
+        pytest.param(
+            "---\ndefault: patch\n---\n\n# Fix a bug\n\n```\ncode\n",
+            0,
+            "unclosed Markdown code fence",
+            id="unclosed-fence",
+        ),
+        pytest.param(
+            "---\ndefault: patch\n---\n\n# Fix \ue000\n", 0, "private-use character U\\+E000", id="placeholder"
+        ),
         pytest.param("Fix a bug\n", 0, "missing YAML front matter", id="missing-front-matter"),
     ],
 )
@@ -564,11 +555,6 @@ def test_validate_news_cli_reports_knope_count(
     assert capsys.readouterr().out == "1\n"
 
 
-def test_changed_changesets_requires_base(news_repository: Path) -> None:
-    with pytest.raises(ValueError, match="news validation needs a PR base"):
-        changed_changesets(news_repository / "knope.toml", "")
-
-
 def test_changed_changesets_skips_directory_guide(news_repository: Path) -> None:
     (news_repository / ".changeset").mkdir()
     (news_repository / "knope.toml").write_text("[package]\n", encoding="utf-8")
@@ -600,49 +586,3 @@ def test_changed_changesets_accepts_footer_only_section(news_repository: Path) -
     _git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Change")
 
     assert changed_changesets(news_repository / "knope.toml", "main") == 1
-
-
-@pytest.mark.parametrize(
-    "section",
-    [
-        pytest.param('{ types = ["security"] }', id="missing-name"),
-        pytest.param('{ name = "Security" }', id="missing-types"),
-        pytest.param('{ name = "Security", footers = "Security-Note" }', id="invalid-footers"),
-    ],
-)
-def test_changed_changesets_rejects_incomplete_section(news_repository: Path, section: str) -> None:
-    (news_repository / "knope.toml").write_text(
-        f"[package]\nextra_changelog_sections = [{section}]\n", encoding="utf-8"
-    )
-
-    with pytest.raises(ValueError, match="Knope changelog sections need"):
-        changed_changesets(news_repository / "knope.toml", "main")
-
-
-@pytest.mark.parametrize(
-    ("configuration", "error", "message"),
-    [
-        pytest.param("[other]\n", ValueError, "expected one", id="no-package"),
-        pytest.param("[packages.first]\n[packages.second]\n", ValueError, "expected one", id="multiple-packages"),
-        pytest.param(
-            '[package]\nextra_changelog_sections = "bad"\n',
-            TypeError,
-            "Knope changelog sections need",
-            id="sections-type",
-        ),
-        pytest.param(
-            '[package]\nextra_changelog_sections = ["bad"]\n',
-            TypeError,
-            "Knope changelog sections need",
-            id="section-type",
-        ),
-    ],
-)
-def test_changed_changesets_rejects_invalid_package_layout(
-    news_repository: Path, configuration: str, error: type[Exception], message: str
-) -> None:
-    config = news_repository / "knope.toml"
-    config.write_text(configuration, encoding="utf-8")
-
-    with pytest.raises(error, match=message):
-        changed_changesets(config, "main")

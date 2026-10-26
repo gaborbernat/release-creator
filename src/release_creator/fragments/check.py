@@ -4,35 +4,36 @@ lazy import sys
 lazy import tomllib
 lazy from fnmatch import fnmatch
 lazy from pathlib import Path
+lazy from typing import Any
 
 lazy import yaml
 
 lazy from release_creator.fragments.knope import changeset_parts, knope_kinds, load_knope_package
-lazy from release_creator.fragments.links import has_hand_written_credit, has_hand_written_pull_request_link
+lazy from release_creator.fragments.links import (
+    has_hand_written_credit,
+    has_hand_written_pull_request_link,
+    has_unclosed_code_fence,
+)
 lazy from release_creator.fragments.names import fragment_category
 lazy from release_creator.fragments.shape import validate_towncrier_fragment
-lazy from release_creator.process import required_executable, run_text
+lazy from release_creator.notes.rst import TILDE_PLACEHOLDER, rst_errors
+lazy from release_creator.process import run_text
 
 
 def changed_fragments(config: Path, base: str) -> int:
     """Count valid added or modified fragments relative to the PR base.
-
-    A missing Git executable raises :exc:`FileNotFoundError`.
 
     :param config: Towncrier configuration file.
     :param base: Target branch name for the pull request diff.
     :returns: Number of changed fragments.
     :raises ValueError: The configuration or a changed fragment is invalid.
     """
-    config, directory, suffix, categories, ignored = _towncrier_settings(config)
-    if not base or suffix not in {".md", ".rst"}:
-        msg = "news validation needs a PR base and a Markdown or reStructuredText changelog"
-        raise ValueError(msg)
+    config, directory, suffix, categories, ignored = _towncrier_settings(config, base)
     count = 0
     for path in _git_paths(directory, ["--diff-filter=AM", "--no-renames", f"origin/{base}...HEAD"]):
         count += _validate_changed_fragment(path, directory, suffix, categories, ignored)
     if count:
-        root = run_text([_git_executable(), "rev-parse", "--show-toplevel"])
+        root = run_text(["git", "rev-parse", "--show-toplevel"])
         if root.returncode:
             msg = root.stderr.strip() or "could not locate repository root"
             raise ValueError(msg)
@@ -70,9 +71,22 @@ def _validate_changed_fragment(
     if not (content := path.read_text(encoding="utf-8")).strip():
         msg = f"empty changelog fragment: {path}"
         raise ValueError(msg)
+    if suffix == ".rst" and (errors := rst_errors(content)):
+        msg = f"invalid reStructuredText in changelog fragment ({errors[0]}): {path}"
+        raise ValueError(msg)
     validate_towncrier_fragment(content, path)
+    _reject_release_breaking_text(content, suffix, path)
     _reject_hand_written_attribution(content, suffix, path)
     return 1
+
+
+def _reject_release_breaking_text(content: str, suffix: str, path: Path) -> None:
+    if TILDE_PLACEHOLDER in content:
+        msg = f"private-use character U+E000 in changelog fragment; release notes reserve it for escaping: {path}"
+        raise ValueError(msg)
+    if suffix == ".md" and has_unclosed_code_fence(content):
+        msg = f"unclosed Markdown code fence in changelog fragment: {path}"
+        raise ValueError(msg)
 
 
 def _reject_hand_written_attribution(content: str, suffix: str, path: Path) -> None:
@@ -84,34 +98,14 @@ def _reject_hand_written_attribution(content: str, suffix: str, path: Path) -> N
         raise ValueError(msg)
 
 
-def validate_fragment_deletions(config: Path) -> None:
-    """Reject staged deletions that Towncrier could not have consumed.
-
-    A missing Git executable raises :exc:`FileNotFoundError`.
-
-    :param config: Towncrier configuration file.
-    :raises ValueError: A deleted path is not a configured fragment.
-    """
-    _, directory, suffix, categories, _ = _towncrier_settings(config)
-    for path in _git_paths(directory, ["--cached", "--diff-filter=D", "--no-renames"]):
-        if path.parent != directory or path.suffix != suffix or fragment_category(path, categories) is None:
-            msg = f"unsupported release fragment: {path}"
-            raise ValueError(msg)
-
-
 def changed_changesets(config: Path, base: str) -> int:
     """Count and validate changed Knope changesets.
-
-    A missing Git executable raises :exc:`FileNotFoundError`.
 
     :param config: Knope configuration file.
     :param base: Target branch name for the pull request diff.
     :returns: Number of added or modified changesets.
     :raises ValueError: The configuration or a changed changeset is invalid.
     """
-    if not base:
-        msg = "news validation needs a PR base"
-        raise ValueError(msg)
     knope = load_knope_package(config)
     categories = knope_kinds(knope)
     directory = Path(".changeset")
@@ -138,24 +132,19 @@ def changed_changesets(config: Path, base: str) -> int:
             ):
                 msg = f"unsupported changeset type in {path}: {package}: {kind}"
                 raise ValueError(msg)
-        _reject_hand_written_attribution(content.removeprefix(frontmatter), ".md", path)
+        body = content.removeprefix(frontmatter)
+        _reject_release_breaking_text(body, ".md", path)
+        _reject_hand_written_attribution(body, ".md", path)
         count += 1
     return count
 
 
-def _towncrier_settings(config: Path) -> tuple[Path, Path, str, set[str], set[str]]:
+def _towncrier_settings(config: Path, base: str) -> tuple[Path, Path, str, set[str], set[str]]:
     if config.name == "pyproject.toml" and (towncrier_config := config.with_name("towncrier.toml")).is_file():
         config = towncrier_config
-    towncrier = tomllib.loads(config.read_text(encoding="utf-8")).get("tool", {}).get("towncrier")
-    if towncrier is None:
-        msg = f"missing [tool.towncrier] in {config}"
-        raise ValueError(msg)
-    if towncrier.get("section"):
-        msg = f"Towncrier sections are not supported for news validation: {config}"
-        raise ValueError(msg)
-    if towncrier.get("package") and "directory" not in towncrier:
-        msg = f"set an explicit Towncrier fragment directory for news validation: {config}"
-        raise ValueError(msg)
+    towncrier = _towncrier_table(config.read_text(encoding="utf-8"))
+    if _towncrier_changed(config, towncrier, base):
+        _reject_unsupported_towncrier_layout(config, towncrier)
     categories = (
         {str(name) for name in towncrier["fragment"]}
         if "fragment" in towncrier
@@ -176,20 +165,33 @@ def _towncrier_settings(config: Path) -> tuple[Path, Path, str, set[str], set[st
     )
 
 
+def _towncrier_table(document: str) -> dict[str, Any]:
+    return tomllib.loads(document).get("tool", {}).get("towncrier")
+
+
+def _towncrier_changed(config: Path, towncrier: dict[str, Any], base: str) -> bool:
+    previous = run_text(["git", "show", f"origin/{base}:./{config.name}"], cwd=config.parent)
+    return bool(previous.returncode) or _towncrier_table(previous.stdout) != towncrier
+
+
+def _reject_unsupported_towncrier_layout(config: Path, towncrier: dict[str, Any]) -> None:
+    if towncrier.get("section"):
+        msg = f"Towncrier sections are not supported for news validation: {config}"
+        raise ValueError(msg)
+    if towncrier.get("package") and "directory" not in towncrier:
+        msg = f"set an explicit Towncrier fragment directory for news validation: {config}"
+        raise ValueError(msg)
+
+
 def _git_paths(directory: Path, options: list[str]) -> list[Path]:
-    result = run_text([_git_executable(), "diff", "--relative", "--name-only", "-z", *options, "--", str(directory)])
+    result = run_text(["git", "diff", "--relative", "--name-only", "-z", *options, "--", str(directory)])
     if result.returncode:
         msg = result.stderr.strip() or "could not inspect changelog fragments"
         raise ValueError(msg)
     return [Path(filename) for filename in result.stdout.strip("\0").split("\0") if filename]
 
 
-def _git_executable() -> str:
-    return required_executable("git")
-
-
 __all__ = [
     "changed_changesets",
     "changed_fragments",
-    "validate_fragment_deletions",
 ]

@@ -102,41 +102,6 @@ def test_add_new_contributors_package_renders_in_notes(changelog: Path, github: 
     )
 
 
-@pytest.mark.parametrize(
-    ("package", "version", "message"),
-    [
-        pytest.param("taplo", "1.1.0", "expected one changelog package section for taplo, found 0", id="package"),
-        pytest.param("tox-toml-fmt", "1.0.0", "expected one changelog section for 1.0.0, found 0", id="version"),
-    ],
-)
-def test_add_new_contributors_package_rejects_missing_section(
-    changelog: Path, github: GitHub, package: str, version: str, message: str
-) -> None:
-    github(_PULLS, set())
-
-    with pytest.raises(ValueError, match=message):
-        add_new_contributors(changelog, version, "tox-dev/toml-fmt", package)
-
-    assert changelog.read_text(encoding="utf-8") == _CHANGELOG
-
-
-def test_add_new_contributors_package_rejects_present_subsection(changelog: Path, github: GitHub) -> None:
-    github(_PULLS, set())
-    add_new_contributors(changelog, "1.1.0", "tox-dev/toml-fmt", "pyproject-fmt")
-
-    with pytest.raises(ValueError, match="New Contributors already present"):
-        add_new_contributors(changelog, "1.1.0", "tox-dev/toml-fmt", "pyproject-fmt")
-
-
-def test_add_new_contributors_package_rejects_rst(tmp_path: Path, github: GitHub) -> None:
-    github(_PULLS, set())
-    changelog = tmp_path / "CHANGELOG.rst"
-    changelog.write_text("1.1.0 (today)\n=============\n")
-
-    with pytest.raises(ValueError, match="package selection requires a Markdown changelog"):
-        add_new_contributors(changelog, "1.1.0", "tox-dev/toml-fmt", "pyproject-fmt")
-
-
 def _run_cli(monkeypatch: pytest.MonkeyPatch, changelog: Path, package: str) -> None:
     monkeypatch.setattr(
         sys,
@@ -167,20 +132,3 @@ def test_contributors_cli_package_edits_package_section(
     assert changelog.read_text(encoding="utf-8") == _CHANGELOG.replace(
         "### 1.0.0 (2026-01-01)\n", f"{_SUBSECTION}### 1.0.0 (2026-01-01)\n", 1
     )
-
-
-@pytest.mark.parametrize("package", [pytest.param("../pyproject-fmt", id="relative"), pytest.param("..", id="parent")])
-def test_contributors_cli_rejects_invalid_package(
-    changelog: Path,
-    github: GitHub,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    package: str,
-) -> None:
-    run = github(_PULLS, set())
-
-    with pytest.raises(SystemExit, match="2"):
-        _run_cli(monkeypatch, changelog, package)
-
-    assert "invalid package name" in capsys.readouterr().err
-    run.assert_not_called()

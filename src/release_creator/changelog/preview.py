@@ -6,7 +6,6 @@ lazy from release_creator.anchors.names import draft_anchor
 lazy from release_creator.categories import CHANGELOG_CATEGORIES
 lazy from release_creator.fragments.names import fragment_category
 lazy from release_creator.markdown import prose_lines
-lazy from release_creator.package_name import valid_package_name
 
 
 def render_preview(changelog: Path, package: str, fragments: Path) -> str:
@@ -16,11 +15,8 @@ def render_preview(changelog: Path, package: str, fragments: Path) -> str:
     :param package: Package whose history to display.
     :param fragments: Directory of pending package fragments.
     :returns: The package's released history and current draft entries.
-    :raises ValueError: The package or a fragment has an unsupported form.
+    :raises ValueError: A fragment has an unsupported form.
     """
-    if not valid_package_name(package):
-        msg = f"invalid package: {package}"
-        raise ValueError(msg)
     history = _package_history(changelog.read_text(encoding="utf-8").splitlines(), package)
     names = {kind: heading for kind, (heading, _) in CHANGELOG_CATEGORIES.items()}
     sections: dict[str, list[str]] = {}
@@ -56,12 +52,10 @@ def render_preview(changelog: Path, package: str, fragments: Path) -> str:
 
 def _package_history(lines: list[str], package: str) -> str:
     headings = [(index, line) for index, line in prose_lines(lines) if line.startswith("## ")]
-    matches = [index for index, line in headings if line == f"## {package}"]
-    if len(matches) != 1:
-        msg = f"expected one changelog section for {package}, found {len(matches)}"
-        raise ValueError(msg)
-    end = next((index for index, _ in headings if index > matches[0]), len(lines))
-    return "\n".join(lines[matches[0] + 1 : end]).strip()
+    if (start := next((index for index, line in headings if line == f"## {package}"), None)) is None:
+        return ""
+    end = next((index for index, _ in headings if index > start), len(lines))
+    return "\n".join(lines[start + 1 : end]).strip()
 
 
 __all__ = [

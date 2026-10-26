@@ -83,22 +83,21 @@ GitHub CLI, and edits the fragment to read:
 
     Avoid stale cache reads ([#42](https://github.com/owner/project/pull/42)) by [@alice](https://github.com/alice).
 
-It fails if GitHub cannot associate the introducing commit with one merged PR, the PR author cannot be read, or the
-fragment already has a PR link. In GitHub Actions, give the job ``pull-requests: read`` and set ``GH_TOKEN`` to
-``github.token``. AI assistant co-authors are dropped, and a bot is credited only when it is the only author. See
-:doc:`linking named fragments <../how-to/link-fragments>` for the required checkout history.
+If GitHub associates no squash-merged PR with the introducing commit, the fragment gets no PR link and credits the
+commit author. The command fails if the PR author cannot be read. In GitHub Actions, give the job ``pull-requests:
+read`` and set ``GH_TOKEN`` to ``github.token``. AI assistant co-authors are dropped, and a bot is credited only when it
+is the only author. See :doc:`linking named fragments <../how-to/link-fragments>` for shallow checkouts.
 
-3. Check the version and build the changelog
-============================================
+3. Choose the version and build the changelog
+=============================================
 
 This example contains only a bug fix, so ``--next auto`` would choose ``0.0.1``. Choose a minor bump to start the
-project at ``0.1.0``. ``tags --require-newer`` then checks that no equal or newer numeric tag exists:
+project at ``0.1.0``:
 
 .. code-block:: bash
 
     git tag --list | uvx --from release-creator release-creator tags \
       --next minor --directory changelog.d
-    git tag --list | uvx --from release-creator release-creator tags 0.1.0 --require-newer
 
 Now let Towncrier consume the linked fragment and assemble the reviewed changelog section. The date is fixed here so the
 example output is reproducible; normal release automation can use the current date.
