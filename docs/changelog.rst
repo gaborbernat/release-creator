@@ -3,6 +3,84 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-4-0-0:
+
+4.0.0 (2026-10-26)
+------------------
+
+.. _release-4-0-0-added:
+
+Added
+~~~~~
+
+- ``validate-news`` rejects a fragment or Knope changeset that contains the private-use character U+E000 or an unclosed
+  Markdown code fence, and a reStructuredText fragment with a parser warning or error, such as an unknown directive or
+  role, an empty ``code-block``, or an ``include``. These were caught only when preparing or publishing the release;
+  ``fragments`` and ``notes`` no longer reject them (:pr:`37`) by :user:`gaborbernat`.
+
+.. _release-4-0-0-changes:
+
+Changes
+~~~~~~~
+
+- ``fragments``, ``validate-news`` and ``contributors`` run ``git`` and ``gh`` without looking them up on ``PATH``
+  first. A missing executable now fails with the operating system's "No such file or directory" error instead of ``git
+  is required`` or ``gh is required`` (:pr:`37`) by :user:`gaborbernat`.
+- ``validate-news`` rejects Towncrier ``section`` entries and a ``package`` without an explicit ``directory`` only when
+  the pull request changes the ``[tool.towncrier]`` table or ``towncrier.toml`` compared with ``--base`` (:pr:`37`) by
+  :user:`gaborbernat`.
+
+.. _release-4-0-0-breaking-changes:
+
+Breaking changes
+~~~~~~~~~~~~~~~~
+
+- Remove ``tags --require-newer`` and the ``require_newer_tag`` function. ``tags <tag>`` without ``--previous`` no
+  longer only validates the tag's format; it selects the predecessor like ``--previous`` (:pr:`37`) by
+  :user:`gaborbernat`.
+- Remove the ``validate-fragment-deletions`` command and the ``validate_fragment_deletions`` function. It only
+  re-checked the release commit that release preparation itself produced (:pr:`37`) by :user:`gaborbernat`.
+- The ``fragments`` linker no longer fails for a shallow checkout, a fragment without an introducing commit, or a commit
+  without exactly one squash-merged pull request. A fragment whose commit has no squash-merged pull request gets no pull
+  request link and credits the commit author after Git's mailmap, as the GitHub login for a GitHub noreply email and
+  otherwise as the author name, dropping AI assistants and the ``[bot]`` suffix as pull request credits do. With several
+  squash-merged pull requests the first is used. In a shallow checkout, and for a fragment without a commit or with an
+  AI assistant author, the fragment stays unchanged. ``add_pull_request_links`` takes a new required ``commits``
+  argument, and ``fragment_commits_from_git`` returns ``FragmentCommit`` values (:pr:`37`) by :user:`gaborbernat`.
+- The ``fragments`` linker no longer re-checks fragments that ``validate-news`` already checked on the pull request. It
+  links a structured fragment, a named fragment that already links its pull request, a name without the ``+`` prefix,
+  and a fragment with several hand-written credits instead of failing. A hand-written credit stays as written, and the
+  linker appends the pull request link and computed credit after it. ``tags --next`` treats a name without the ``+``
+  prefix as a patch change. ``fragment_number`` is removed (:pr:`37`) by :user:`gaborbernat`.
+- ``anchors`` returns a changelog without release headings unchanged instead of failing with ``no Markdown release
+  headings found`` (:pr:`37`) by :user:`gaborbernat`.
+- ``changelog`` no longer rejects an ``--output`` that is the tracked changelog or a ``--fragments`` directory that does
+  not exist. ``render_preview`` no longer requires exactly one ``## <package>`` section: it uses the first one, and with
+  none the page has no released history (:pr:`37`) by :user:`gaborbernat`.
+- ``contributors`` no longer rejects a changelog path other than ``.md`` or ``.rst``, ``--package`` with a
+  reStructuredText changelog, a section that already has a New Contributors subsection, a linked pull request that is
+  not merged, or a reStructuredText section without a category heading. Unmerged pull requests are skipped, and the
+  subsection heading falls back to a ``-`` underline (:pr:`37`) by :user:`gaborbernat`.
+- ``fragments``, ``notes``, ``contributors``, ``tags`` and the changelog preview no longer reject a malformed
+  ``--repository``, ``--tag``, ``--previous`` or ``--package`` value, a ``notes --package`` that does not match the
+  tag's package, or a non-HTTPS ``--artifact-url``. They use the value as given (:pr:`37`) by :user:`gaborbernat`.
+- ``marketplace`` no longer rejects a local plugin ZIP that contains no files; it compares it with Marketplace like any
+  other archive (:pr:`37`) by :user:`gaborbernat`.
+- ``notes --package`` with a reStructuredText changelog no longer fails with ``package selection requires a Markdown
+  changelog``; the package is ignored (:pr:`37`) by :user:`gaborbernat`.
+- ``notes`` and ``contributors`` use the first matching version section, and the first ``## <package>`` section, instead
+  of requiring exactly one; a missing section now raises ``StopIteration``. ``notes`` renders an unknown category under
+  its own name, passes Markdown text outside a category or item through unchanged, keeps empty Markdown categories, and
+  renders reStructuredText blocks outside a category or item, and unsupported nested blocks such as a nested ``..
+  warning::``, as plain text instead of failing (:pr:`37`) by :user:`gaborbernat`.
+- ``tags --previous`` prints nothing for a target tag that is not a ``major.minor.patch`` release, or that names another
+  package than ``--package``, instead of failing. ``tags --next`` with no pending fragments selects a patch release
+  instead of failing with ``no changelog fragments to release`` (:pr:`37`) by :user:`gaborbernat`.
+- ``validate-news`` no longer rejects an empty ``--base``, a Towncrier changelog filename other than ``.md`` or
+  ``.rst``, a ``pyproject.toml`` without ``[tool.towncrier]``, or a ``knope.toml`` without exactly one package.
+  ``validate-news`` and ``changelog`` no longer check the shape of Knope ``extra_changelog_sections``. With several
+  ``[packages.<name>]`` tables, the first one is used (:pr:`37`) by :user:`gaborbernat`.
+
 .. _release-3-2-1:
 
 3.2.1 (2026-10-26)
