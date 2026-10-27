@@ -3,6 +3,20 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-4-3-0:
+
+4.3.0 (2026-10-27)
+------------------
+
+.. _release-4-3-0-added:
+
+Added
+~~~~~
+
+- Repeat ``--artifact-url``, with a matching ``--artifact-label`` for each, to list every published package on one line.
+  Each package link starts with an emoji for its ecosystem, such as 🐍 for PyPI, and the comparison link now reads ``📜
+  Full Changelog`` (:pr:`51`) by :user:`gaborbernat`.
+
 .. _release-4-2-0:
 
 4.2.0 (2026-10-26)
