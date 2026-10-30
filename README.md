@@ -50,10 +50,11 @@ only the tagged changelog section.
 Named Towncrier fragments need no issue or PR number. Before Towncrier builds the changelog, run
 `release-creator fragments --repository owner/repo`. The command reads the commits that introduced pending fragments,
 asks GitHub which squash-merged pull request owns each commit, and adds its PR link and a credit computed from the merge
-commit: the PR author first, then every other author and co-author. AI assistant identities are dropped, and bots are
-credited only when they are the only author. `gh` needs read access to the repository. A fragment whose introducing
-commit has no squash-merged PR, as after a merge commit or rebase merge, gets no PR link and credits the commit author
-by the same rules. In a shallow checkout the linker leaves every fragment unchanged.
+commit: the PR author first, then every other author and co-author. It drops AI assistant identities and credits bots
+only when they are the only author. `gh` needs read access to the repository. When GitHub associates no PR with a squash
+commit, the command reads the `(#N)` ending its subject and links PR N only if it merged as that commit. A fragment
+still without a PR, as after a merge commit or rebase merge, gets no PR link and credits the commit author by the same
+rules. In a shallow checkout the linker leaves every fragment unchanged.
 
 The `tags` command calculates a version from pending fragments and selects the preceding tag for GitHub comparisons:
 

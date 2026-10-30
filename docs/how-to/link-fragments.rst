@@ -25,8 +25,10 @@ and an introducing squash commit associated with PR #42, run:
 
 The command reads the introducing commit for each pending fragment in one Git query. It asks GitHub for the merged PR
 associated with each commit and credits the PR author, then every other author and co-author of its merge commit in
-commit order. In GitHub Actions, grant ``pull-requests: read`` and set ``GH_TOKEN`` to the workflow token. The command
-edits the fragment in place:
+commit order. GitHub can return no associated PR for a squash commit. The command then reads the ``(#42)`` that ends the
+commit subject and uses PR #42 only if it merged as that same commit, so a subject that mentions another PR links
+nothing. In GitHub Actions, grant ``pull-requests: read`` and set ``GH_TOKEN`` to the workflow token. The command edits
+the fragment in place:
 
 .. code-block:: markdown
 
@@ -112,13 +114,13 @@ tables, headings, and raw RST directives in a fragment can move its link or cred
 check rejects them. Code blocks remain supported. Use another fragment file for another change.
 
 For Towncrier, the linker processes filenames beginning with ``+`` and numeric filenames in the fragment directory. When
-GitHub associates no squash-merged PR with a fragment's introducing commit, the linker adds no PR link and credits the
-commit author after Git's mailmap: the GitHub login for a GitHub noreply email, otherwise the author name. The PR credit
-rules apply: AI assistant authors get no credit, and a bot's ``[bot]`` suffix is dropped. A fragment with no introducing
-commit, such as an uncommitted one, or with an AI assistant as its commit author, stays unchanged. A fragment that
-already links its pull request keeps that link and gains the credit. A fragment that skipped ``validate-news`` keeps any
-hand-written credit as written and gains the PR link and computed credit after it. A failed GitHub lookup stops the
-command before Towncrier builds the changelog.
+neither GitHub's association nor the commit subject yields a merged PR for a fragment's introducing commit, the linker
+adds no PR link and credits the commit author after Git's mailmap: the GitHub login for a GitHub noreply email,
+otherwise the author name. The PR credit rules apply: AI assistant authors get no credit, and a bot's ``[bot]`` suffix
+is dropped. A fragment with no introducing commit, such as an uncommitted one, or with an AI assistant as its commit
+author, stays unchanged. A fragment that already links its pull request keeps that link and gains the credit. A fragment
+that skipped ``validate-news`` keeps any hand-written credit as written and gains the PR link and computed credit after
+it. A failed GitHub lookup stops the command before Towncrier builds the changelog.
 
 For Knope, the linker processes Markdown files in ``.changeset`` except ``README.md``. Each file needs YAML front matter
 and a level-one heading after it. The command checks the introducing commit and computes the credit in the same way. To

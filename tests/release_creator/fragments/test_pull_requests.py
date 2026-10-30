@@ -95,6 +95,54 @@ def test_fragment_pull_requests_uses_first_squash_pull(monkeypatch: pytest.Monke
     assert result["+news.feature.md"].number == "3"
 
 
+def _subject_fallback(monkeypatch: pytest.MonkeyPatch, candidate: dict[str, object]) -> MagicMock:
+    responses = [
+        {
+            "data": {
+                "repository": {"c0": {"messageHeadline": "Fix a bug (#7)", "associatedPullRequests": {"nodes": []}}}
+            }
+        },
+        {"data": {"repository": {"p0": candidate}}},
+    ]
+    run: MagicMock = cast(
+        "MagicMock",
+        create_autospec(
+            process.subprocess.run,
+            side_effect=[subprocess.CompletedProcess([], 0, json.dumps(response), "") for response in responses],
+        ),
+    )
+    monkeypatch.setattr(process.subprocess, "run", run)
+    return run
+
+
+def test_fragment_pull_requests_reads_pull_request_from_subject(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _subject_fallback(monkeypatch, _pull("a" * 40, number=7))
+
+    result = pull_requests.fragment_pull_requests("tox-dev/example", {"+news.feature.md": "a" * 40})
+
+    assert result == {
+        "+news.feature.md": PullRequest(number="7", credits=(PullRequestCredit(name="alice", linked=True),))
+    }
+    assert "p0: issueOrPullRequest(number: 7)" in run.call_args.kwargs["input"]
+    parse(run.call_args.kwargs["input"])
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        pytest.param(_pull("b" * 40, number=7), id="other-merge-commit"),
+        pytest.param({**_pull("a" * 40, number=7), "mergedAt": None}, id="not-merged"),
+        pytest.param({}, id="issue"),
+    ],
+)
+def test_fragment_pull_requests_ignores_subject_pull_request_merged_elsewhere(
+    monkeypatch: pytest.MonkeyPatch, candidate: dict[str, object]
+) -> None:
+    _subject_fallback(monkeypatch, candidate)
+
+    assert pull_requests.fragment_pull_requests("tox-dev/example", {"+news.feature.md": "a" * 40}) == {}
+
+
 @pytest.mark.parametrize(
     ("nodes", "error", "message"),
     [
