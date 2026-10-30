@@ -3,6 +3,19 @@ Changelog
 
 .. towncrier release notes start
 
+.. _release-4-3-1:
+
+4.3.1 (2026-10-30)
+------------------
+
+.. _release-4-3-1-fixed:
+
+Fixed
+~~~~~
+
+- The ``fragments`` linker reads the ``(#N)`` that ends a squash commit's subject when GitHub associates no pull request
+  with that commit, and links pull request N when it merged as that commit (:pr:`55`) by :user:`gaborbernat`.
+
 .. _release-4-3-0:
 
 4.3.0 (2026-10-27)
