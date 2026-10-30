@@ -167,7 +167,7 @@ def test_fragments_explains_commit_fallback(
     sha = _commit(str(fragment), email=email)
     _github(mocker, [])
 
-    _link(monkeypatch, "--credit-commit-author")
+    _link(monkeypatch)
 
     assert capsys.readouterr().err.splitlines()[-1] == expected.format(sha=sha[:7])
 

@@ -17,11 +17,6 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     fragments.add_argument("--format", choices=("towncrier", "knope"), default="towncrier", help="fragment format")
     fragments.add_argument("--directory", type=Path, help="fragment directory; defaults to changelog.d or .changeset")
     fragments.add_argument("--repository", required=True, help="GitHub owner/repository")
-    fragments.add_argument(
-        "--credit-commit-author",
-        action="store_true",
-        help="credit the commit author of a fragment without a merged pull request instead of failing",
-    )
     fragments.set_defaults(handler=_link)
     news = commands.add_parser("validate-news", help="validate changed pull request fragments")
     news.add_argument("--format", choices=("towncrier", "knope"), default="towncrier", help="fragment format")
@@ -41,16 +36,6 @@ def _link(args: argparse.Namespace) -> None:
         return
     commits = fragment_commits_from_git(directory, knope=knope)
     pull_requests = fragment_pull_requests(args.repository, {name: commit.sha for name, commit in commits.items()})
-    if not args.credit_commit_author and (
-        unlinked := [
-            f"{name} (commit {commit.sha[:7]})" for name, commit in sorted(commits.items()) if name not in pull_requests
-        ]
-    ):
-        msg = (
-            f"no merged pull request for {counted(len(unlinked), 'fragment')}, "
-            f"pass --credit-commit-author to credit the commit authors instead: {', '.join(unlinked)}"
-        )
-        raise ValueError(msg)
     mode = "knope" if knope else "towncrier"
     add_pull_request_links(directory, args.repository, pull_requests, commits=commits, mode=mode)
 

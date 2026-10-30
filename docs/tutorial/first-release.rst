@@ -83,11 +83,10 @@ GitHub CLI, and edits the fragment to read:
 
     Avoid stale cache reads ([#42](https://github.com/owner/project/pull/42)) by [@alice](https://github.com/alice).
 
-If GitHub associates no PR with the squash commit, the command uses the ``(#42)`` that ends its subject once PR #42
-proves to have merged as that commit. The command fails if a fragment has no merged PR or it cannot read the PR author.
-In GitHub Actions, give the job ``pull-requests: read`` and set ``GH_TOKEN`` to ``github.token``. The command drops AI
-assistant co-authors and credits a bot only when it is the only author. See :doc:`linking named fragments
-<../how-to/link-fragments>` for shallow checkouts.
+If GitHub associates no squash-merged PR with the introducing commit, the fragment gets no PR link and credits the
+commit author. The command fails if the PR author cannot be read. In GitHub Actions, give the job ``pull-requests:
+read`` and set ``GH_TOKEN`` to ``github.token``. AI assistant co-authors are dropped, and a bot is credited only when it
+is the only author. See :doc:`linking named fragments <../how-to/link-fragments>` for shallow checkouts.
 
 3. Choose the version and build the changelog
 =============================================
