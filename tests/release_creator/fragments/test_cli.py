@@ -72,29 +72,21 @@ def test_fragments_cli_links_merged_pull_request(
 
 
 def _mock_github_pull(mocker: MockerFixture, commit: str) -> MagicMock:
-    response = {
-        "data": {
-            "repository": {
-                "c0": {
-                    "associatedPullRequests": {
-                        "nodes": [
-                            {
-                                "number": 3,
-                                "mergedAt": "2026-10-22T00:00:00Z",
-                                "mergeCommit": {"oid": commit, "authors": {"nodes": []}},
-                                "author": {"login": "alice", "__typename": "User"},
-                            }
-                        ]
-                    }
-                }
-            }
-        }
+    pull = {
+        "number": 3,
+        "mergedAt": "2026-10-22T00:00:00Z",
+        "mergeCommit": {"oid": commit, "authors": {"nodes": []}},
+        "author": {"login": "alice", "__typename": "User"},
     }
+    return _mock_github(mocker, {"c0": {"associatedPullRequests": {"nodes": [pull]}}})
+
+
+def _mock_github(mocker: MockerFixture, repository: dict[str, object]) -> MagicMock:
     original_run = process.subprocess.run
 
     def execute(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         if command[0] == "gh":
-            return subprocess.CompletedProcess(command, 0, json.dumps(response), "")
+            return subprocess.CompletedProcess(command, 0, json.dumps({"data": {"repository": repository}}), "")
         return original_run(
             command,
             cwd=cast("Path | None", kwargs["cwd"]),
@@ -141,3 +133,36 @@ def test_fragments_cli_reports_missing_history(
         main()
 
     assert "not a git repository" in capsys.readouterr().err
+
+
+def test_fragments_cli_fails_for_fragments_without_pull_request(
+    git_repository: tuple[Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    checkout, git = git_repository
+    directory = checkout / "changelog.d"
+    directory.mkdir()
+    shas: list[str] = []
+    for name in ("+first.bugfix.md", "+second.bugfix.md"):
+        (directory / name).write_text("Fix a bug.\n")
+        assert run_text([git, "add", str(directory)]).returncode == 0
+        assert run_text([git, "commit", "-qm", "Merge branch 'fix'"]).returncode == 0
+        shas.append(run_text([git, "rev-parse", "--short=7", "HEAD"]).stdout.strip())
+    _mock_github(
+        mocker,
+        {
+            f"c{index}": {"messageHeadline": "Merge branch 'fix'", "associatedPullRequests": {"nodes": []}}
+            for index in (0, 1)
+        },
+    )
+    monkeypatch.setattr(sys, "argv", ["release-creator", "fragments", "--repository", "tox-dev/example"])
+
+    with pytest.raises(SystemExit, match="2"):
+        main()
+
+    assert (
+        f"no merged pull request for 2 fragments, pass --credit-commit-author to credit the commit authors instead: "
+        f"+first.bugfix.md (commit {shas[0]}), +second.bugfix.md (commit {shas[1]})"
+    ) in capsys.readouterr().err

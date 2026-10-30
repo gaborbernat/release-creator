@@ -4,8 +4,9 @@
 
 ``fragments`` answers one question: which merged pull request introduced each changelog entry? Contributors can write
 ``+cache.bugfix.md`` before a pull request number exists. Run the command on the default branch after squash merge and
-before Towncrier consumes the fragments. After a merge or rebase merge, the introducing commit identifies no
-squash-merged PR, so the fragment gets no PR link and credits that commit's author instead.
+before Towncrier consumes the fragments. A fragment whose introducing commit has no merged PR stops the command. After a
+merge or rebase merge, no commit identifies a squash-merged PR; pass ``--credit-commit-author`` to credit the
+introducing commit's author instead.
 
 What the command changes
 ========================
@@ -25,8 +26,10 @@ and an introducing squash commit associated with PR #42, run:
 
 The command reads the introducing commit for each pending fragment in one Git query. It asks GitHub for the merged PR
 associated with each commit and credits the PR author, then every other author and co-author of its merge commit in
-commit order. In GitHub Actions, grant ``pull-requests: read`` and set ``GH_TOKEN`` to the workflow token. The command
-edits the fragment in place:
+commit order. GitHub can return no associated PR for a squash commit. The command then reads the ``(#42)`` that ends the
+commit subject and uses PR #42 only if it merged as that same commit, so a subject that mentions another PR links
+nothing. In GitHub Actions, grant ``pull-requests: read`` and set ``GH_TOKEN`` to the workflow token. The command edits
+the fragment in place:
 
 .. code-block:: markdown
 
@@ -112,10 +115,12 @@ tables, headings, and raw RST directives in a fragment can move its link or cred
 check rejects them. Code blocks remain supported. Use another fragment file for another change.
 
 For Towncrier, the linker processes filenames beginning with ``+`` and numeric filenames in the fragment directory. When
-GitHub associates no squash-merged PR with a fragment's introducing commit, the linker adds no PR link and credits the
-commit author after Git's mailmap: the GitHub login for a GitHub noreply email, otherwise the author name. The PR credit
-rules apply: AI assistant authors get no credit, and a bot's ``[bot]`` suffix is dropped. A fragment with no introducing
-commit, such as an uncommitted one, or with an AI assistant as its commit author, stays unchanged. A fragment that
+neither GitHub's association nor the commit subject yields a merged PR for a fragment's introducing commit, the command
+exits with an error that lists each such fragment and its commit, before it edits any file. With
+``--credit-commit-author`` it instead adds no PR link and credits the commit author after Git's mailmap, as the GitHub
+login for a GitHub ``noreply`` email and otherwise as the author name. Under the PR credit rules, AI assistant authors
+get no credit, and the linker drops a bot's ``[bot]`` suffix, so a fragment with an AI assistant as its commit author
+stays unchanged. A fragment with no introducing commit, such as an uncommitted one, stays unchanged. A fragment that
 already links its pull request keeps that link and gains the credit. A fragment that skipped ``validate-news`` keeps any
 hand-written credit as written and gains the PR link and computed credit after it. A failed GitHub lookup stops the
 command before Towncrier builds the changelog.

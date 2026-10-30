@@ -6,8 +6,9 @@ from __future__ import annotations
 lazy import json
 lazy import re
 lazy from dataclasses import dataclass
-lazy from typing import Final
+lazy from typing import Final, TypeGuard
 
+lazy from release_creator.explain import explain
 lazy from release_creator.process import run_text
 
 _RE_AI_ASSISTANT_EMAIL: Final = re.compile(
@@ -42,6 +43,9 @@ AI_ASSISTANT_LOGINS: Final = frozenset(
 def fragment_pull_requests(repository: str, commits: dict[str, str]) -> dict[str, PullRequest]:
     """Resolve each fragment through GitHub's commit-to-pull-request API.
 
+    When GitHub associates no squash-merged pull request with a commit, the ``(#N)`` that ends its subject names the
+    candidate, used only when that pull request merged as this commit.
+
     :param repository: GitHub owner and repository.
     :param commits: Fragment names mapped to introducing commit hashes.
     :returns: Fragment names mapped to the merged pull request and its author; a fragment whose commit has no
@@ -55,26 +59,51 @@ def _pulls(repository: str, shas: list[str]) -> dict[str, PullRequest | None]:
     if not shas:
         return {}
     owner, name = repository.split("/", 1)
+    pull_fields = (
+        "number mergedAt author { login __typename } mergeCommit { oid authors(first: 100) "
+        "{ nodes { name email user { login __typename } } } }"
+    )
+    response = _query(
+        owner,
+        name,
+        {
+            f"c{index}": (
+                f'object(oid: "{sha}") {{ ... on Commit {{ messageHeadline associatedPullRequests(first: 100) '
+                f"{{ nodes {{ {pull_fields} }} }} }} }}"
+            )
+            for index, sha in enumerate(shas)
+        },
+    )
     pulls: dict[str, PullRequest | None] = {}
-    aliases = [
-        (
-            f"c{index}",
-            sha,
-            (
-                f'c{index}: object(oid: "{sha}") {{ ... on Commit {{ associatedPullRequests(first: 100) '
-                "{ nodes { number mergedAt author { login __typename } mergeCommit { oid authors(first: 100) "
-                "{ nodes { name email user { login __typename } } } } } } } }"
-            ),
-        )
-        for index, sha in enumerate(shas)
-    ]
+    referenced: dict[str, int] = {}
+    for index, sha in enumerate(shas):
+        pulls[sha], number = _read_alias(response, f"c{index}", sha)
+        if number is not None:
+            referenced[sha] = number
+    candidates = _query(
+        owner,
+        name,
+        {
+            f"p{index}": f"issueOrPullRequest(number: {number}) {{ ... on PullRequest {{ {pull_fields} }} }}"
+            for index, number in enumerate(referenced.values())
+        },
+    )
+    for index, (sha, number) in enumerate(referenced.items()):
+        if _is_squash_pull(candidate := candidates.get(f"p{index}"), sha):
+            explain(f"Read #{number} from the subject of commit {sha[:7]}: GitHub associates no pull request with it")
+            pulls[sha] = _pull_request(candidate, f"commit {sha}")
+        else:
+            explain(f"Ignored #{number} in the subject of commit {sha[:7]}: it did not merge as that commit")
+    return pulls
+
+
+def _query(owner: str, name: str, expressions: dict[str, str]) -> dict[str, object]:
+    found: dict[str, object] = {}
+    aliases = list(expressions)
     batch_size: Final = 40
     for offset in range(0, len(aliases), batch_size):
-        batch = aliases[offset : offset + batch_size]
-        query = (
-            f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) "
-            f"{{ {' '.join(expression for _, _, expression in batch)} }} }}"
-        )
+        fields = " ".join(f"{alias}: {expressions[alias]}" for alias in aliases[offset : offset + batch_size])
+        query = f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ {fields} }} }}"
         result = run_text(["gh", "api", "graphql", "-F", "query=@-"], stdin=query)
         if result.returncode:
             msg = result.stderr.strip() or "could not read GitHub pull requests"
@@ -84,30 +113,40 @@ def _pulls(repository: str, shas: list[str]) -> dict[str, PullRequest | None]:
         except (KeyError, TypeError, json.JSONDecodeError) as error:
             msg = "invalid GitHub associated pull requests response"
             raise ValueError(msg) from error
-        for alias, identifier, _ in batch:
-            pulls[identifier] = _read_alias(response, alias, identifier)
-    return pulls
+        if not isinstance(response, dict):
+            msg = "invalid pull request response from GitHub"
+            raise TypeError(msg)
+        found |= response
+    return found
 
 
-def _read_alias(response: object, alias: str, identifier: str) -> PullRequest | None:
-    if not isinstance(response, dict):
-        msg = f"invalid pull request response for {identifier}"
-        raise TypeError(msg)
-    if (pull := response.get(alias)) is None:
+def _read_alias(response: dict[str, object], alias: str, identifier: str) -> tuple[PullRequest | None, int | None]:
+    if (commit := response.get(alias)) is None:
         msg = f"missing pull request response for {identifier}"
         raise ValueError(msg)
-    if not isinstance(pull, dict):
+    if not isinstance(commit, dict):
         msg = f"invalid pull request response for {identifier}"
         raise TypeError(msg)
-    associated = pull.get("associatedPullRequests")
+    associated = commit.get("associatedPullRequests")
     if not isinstance(associated, dict) or not isinstance(nodes := associated.get("nodes"), list):
         msg = f"invalid pull request response for commit {identifier}"
         raise TypeError(msg)
-    merged = [item for item in nodes if _is_squash_pull(item, identifier)]
-    return _pull_request(merged[0], f"commit {identifier}") if merged else None
+    if merged := [item for item in nodes if _is_squash_pull(item, identifier)]:
+        return _pull_request(merged[0], f"commit {identifier}"), None
+    if isinstance(subject := commit.get("messageHeadline"), str) and (
+        match := re.search(
+            r"""
+            \(\#(?P<number>\d+)\)$  # Pull request number GitHub appends to a squash merge subject
+            """,
+            subject,
+            flags=re.VERBOSE,
+        )
+    ):
+        return None, int(match["number"])
+    return None, None
 
 
-def _is_squash_pull(pull: object, sha: str) -> bool:
+def _is_squash_pull(pull: object, sha: str) -> TypeGuard[dict[str, object]]:
     if not isinstance(pull, dict) or pull.get("mergedAt") is None:
         return False
     return bool(isinstance(commit := pull.get("mergeCommit"), dict) and commit.get("oid") == sha)
